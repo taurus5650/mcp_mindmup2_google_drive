@@ -32,7 +32,7 @@ class GoogleDriveConfig(BaseSettings):
             'https://www.googleapis.com/auth/drive',
             'https://www.googleapis.com/auth/drive.file',
         ],
-        description='GOogle Drive API scopes.'
+        description='Google Drive API scopes.'
     )
 
     client_id: Optional[str] = Field(default=None, description='OAuth client Id.')
