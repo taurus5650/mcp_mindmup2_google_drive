@@ -1,0 +1,9 @@
+{
+  "name": "MCP MindMup Google Drive",
+  "mcpServers": {
+    "mindmup-gdrive": {
+      "command": "/Users/shyin/Documents/shyin-personal-git-new/mcp_mindmup2_google_drive/mcp_server.sh",
+      "args": []
+    }
+  }
+}

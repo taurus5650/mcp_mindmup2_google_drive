@@ -32,7 +32,7 @@ class SimpleLogger:
 
         # Console settings
         if console:
-            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler = logging.StreamHandler(sys.stderr)
             if json_format:
                 console_handler.setFormatter(JsonFormatter())
             else:

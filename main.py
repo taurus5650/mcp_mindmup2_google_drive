@@ -1,9 +1,3 @@
-"""
-Main entry point for the MCP MindMup Google Drive server.
-
-This module serves as the entry point for the application, importing and starting
-the MCP server from src.core.mcp_server.
-"""
 import asyncio
 import sys
 import os
@@ -29,5 +23,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

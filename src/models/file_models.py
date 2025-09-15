@@ -112,6 +112,7 @@ class SearchQuery:
     mime_types: List[str] = field(default_factory=list)
     max_results: int = 100
     include_trashed: bool = False
+    name_contains: Optional[str] = None
 
     def to_drive_query(self) -> str:
         """Convert to Google Drive query."""
@@ -125,6 +126,9 @@ class SearchQuery:
 
         if self.query:
             conditions.append(f"name contains '{self.query}'")
+
+        if self.name_contains:
+            conditions.append(f"name contains '{self.name_contains}'")
 
         if self.mime_types:
             mime_conditions = [f"mimeType='{mt}'" for mt in self.mime_types]

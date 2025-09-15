@@ -32,8 +32,8 @@ class MCPServer:
             try:
                 query = SearchQuery(
                     max_results=max_results,
-                    mime_types=file_type,
-                    name_contains=name_contains
+                    mime_types=[file_type] if file_type else [],
+                    query=name_contains
                 )
                 result = await self.gdrive_client.list_files(query=query)
 
@@ -160,6 +160,7 @@ class MCPServer:
                 logger.error(f'list_accessible_folders error: {e}')
                 return {"error": str(e)}
 
+
     async def initialize_clients(self):
         """Initialize Google Drive and MindMup clients."""
         try:
@@ -190,20 +191,33 @@ class MCPServer:
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         env_file = '.env.dev' if os.getenv('ENV', 'development') == 'development' else '.env.prod'
         env_path = os.path.join(project_root, 'deployment', env_file)
+
+        logger.info(f'Project root: {project_root}')
+        logger.info(f'Current working directory: {os.getcwd()}')
+        logger.info(f'Loading env from: {env_path}')
+
         load_dotenv(env_path)
 
-        # Initialize clients before starting MCP server
-        async def setup():
+        # Initialize clients synchronously before starting server
+        async def init_clients():
             success = await self.initialize_clients()
             if not success:
                 logger.error('Failed to initialize clients. Exiting.')
                 return False
-            logger.info('Starting MCP server...')
+            logger.info('Clients ready. Starting FastMCP server...')
             return True
 
-        # Run setup and then start MCP server
-        if asyncio.run(setup()):
+        # Initialize first
+        if not asyncio.run(init_clients()):
+            return
+
+        # Start the MCP server - this should block and handle stdio
+        logger.info('Starting FastMCP server in stdio mode...')
+        try:
             self.mcp.run()
+        except Exception as e:
+            logger.error(f'FastMCP server error: {e}')
+            raise
 
 
 # Create a singleton instance
