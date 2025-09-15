@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Virtual environments
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+deployment/logs/*
+
+# Testing
+.pytest_cache
+coverage.xml
+.coverage
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Documentation
+README.md
+docs/

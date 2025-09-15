@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 
@@ -14,13 +15,18 @@ logger = get_logger(__name__)
 
 class MCPServer:
     def __init__(self):
-        self.mcp = FastMCP('Mindmup Google Drive Integration')
+        self.mcp = FastMCP('Mindmup Google Drive Integration', host='0.0.0.0', port=9801)
         self.gdrive_client = None
         self.mindmup_manager = None
         self._setup_tools()
 
     def _setup_tools(self):
         """Register all MCP tools."""
+
+        @self.mcp.tool()
+        async def ping() -> Dict[str, Any]:
+            """Health check endpoint for SSE mode."""
+            return {"status": "ok", "timestamp": time.time()}
 
         @self.mcp.tool()
         async def list_gdrive_files(
@@ -236,8 +242,8 @@ class MCPServer:
             logger.error(f'Error initializing clients: {e}')
             return False
 
-    def start(self):
-        """Start the MCP server."""
+    def start(self, mode: str = "stdio", host: str = "0.0.0.0", port: int = 9801):
+        """Start the MCP server in specified mode."""
         # Load environment variables from deployment directory
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         env_file = '.env.dev' if os.getenv('ENV', 'development') == 'development' else '.env.prod'
@@ -262,13 +268,21 @@ class MCPServer:
         if not asyncio.run(init_clients()):
             return
 
-        # Start the MCP server - this should block and handle stdio
-        logger.info('Starting FastMCP server in stdio mode...')
-        try:
-            self.mcp.run()
-        except Exception as e:
-            logger.error(f'FastMCP server error: {e}')
-            raise
+        # Start the MCP server in specified mode
+        if mode == "http":
+            logger.info(f'Starting FastMCP server in SSE mode...')
+            try:
+                self.mcp.run(transport="sse")
+            except Exception as e:
+                logger.error(f'FastMCP SSE server error: {e}')
+                raise
+        else:
+            logger.info('Starting FastMCP server in stdio mode...')
+            try:
+                self.mcp.run()
+            except Exception as e:
+                logger.error(f'FastMCP server error: {e}')
+                raise
 
 
 # Create a singleton instance

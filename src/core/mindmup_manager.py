@@ -121,6 +121,8 @@ class MindMupManager:
 
         for file_info in mindmup_files:
             try:
+                # Debug logging
+                logger.info(f'Attempting to load mindmup for file: {file_info.id}, self type: {type(self)}, has load_mindmup: {hasattr(self, "load_mindmup")}')
                 load_result = await self.load_mindmup(file_info.id)
                 if load_result.success:
                     parse_result = await self.parse_mindmup_file(load_result.data)

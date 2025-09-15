@@ -13,6 +13,51 @@ from typing import Optional, Dict, Any
 request_id_context: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
 
 
+class SafeStreamHandler(logging.StreamHandler):
+    """Stream handler that gracefully handles broken pipes in MCP stdio mode."""
+
+    def __init__(self, stream=None):
+        super().__init__(stream)
+        self.fallback_file = None
+
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except BrokenPipeError:
+            # If stderr is broken, create a fallback file logger
+            self._create_fallback_logger(record)
+        except OSError as e:
+            if e.errno in (32, 22):  # EPIPE, EINVAL
+                self._create_fallback_logger(record)
+            else:
+                raise
+
+    def _create_fallback_logger(self, record):
+        """Create a fallback file logger when stderr fails."""
+        if self.fallback_file is None:
+            try:
+                # Create logs directory if it doesn't exist
+                logs_dir = Path('/tmp/mcp_mindmup_logs')
+                logs_dir.mkdir(exist_ok=True)
+
+                # Create fallback log file
+                fallback_path = logs_dir / 'mcp_server.log'
+                self.fallback_file = open(fallback_path, 'a', encoding='utf-8')
+            except Exception:
+                # If even file creation fails, silently ignore
+                return
+
+        try:
+            # Write to fallback file
+            if self.fallback_file:
+                formatted = self.format(record)
+                self.fallback_file.write(formatted + '\n')
+                self.fallback_file.flush()
+        except Exception:
+            # If writing to fallback fails, silently ignore
+            pass
+
+
 class SimpleLogger:
     def __init__(self, name: str = 'mcp_mindmup2_google_drive'):
         self.name = name
@@ -32,7 +77,8 @@ class SimpleLogger:
 
         # Console settings
         if console:
-            console_handler = logging.StreamHandler(sys.stderr)
+            # For MCP stdio mode, we use a safer handler that writes to a file if stderr fails
+            console_handler = SafeStreamHandler(sys.stderr)
             if json_format:
                 console_handler.setFormatter(JsonFormatter())
             else:
@@ -85,7 +131,6 @@ class SimpleLogger:
         finally:
             del frame
 
-        getattr(self._logger, level.lower())(message, extra=log_extra)
 
     def debug(self, message: str, extra: Dict[str, Any] = None):
         """Log debug message."""
@@ -110,7 +155,7 @@ class SimpleLogger:
         request_id = self.get_request_id()
         if request_id:
             log_extra['request_id'] = request_id
-        self._logger.exception(message, extra=log_extra)
+
 
     def _ensure_configured(self):
         """Ensure logger is configured before use."""
@@ -178,8 +223,6 @@ def _get_caller_filename():
     return 'unknown'
 
 # Auto-detecting logger instance
-
-
 class AutoLogger(SimpleLogger):
     def __init__(self):
         caller_name = _get_caller_filename()

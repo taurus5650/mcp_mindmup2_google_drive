@@ -1,0 +1,21 @@
+services:
+  mcp-server:
+    build: .
+    ports:
+      - "9801:9801"
+    environment:
+      - MCP_MODE=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=9801
+      - ENV=production
+      - GOOGLE_DRIVE_CREDENTIALS_FILE=/app/deployment/credentials/google_drive_credentials.json
+    volumes:
+      - ./deployment/credentials:/app/deployment/credentials:ro
+      - ./deployment/logs:/app/deployment/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9801/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

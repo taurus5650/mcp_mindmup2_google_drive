@@ -14,8 +14,19 @@ logger = get_logger(__name__)
 def main():
     """Main function to start the MCP server."""
     try:
-        logger.info('Starting MCP MindMup Google Drive server...')
-        mcp_server.start()
+        # Check if running in HTTP mode (e.g., in Docker)
+        mode = os.getenv('MCP_MODE', 'stdio')
+        host = os.getenv('MCP_HOST', '0.0.0.0')
+        port = int(os.getenv('MCP_PORT', '9801'))
+
+        logger.info(f'Starting MCP MindMup Google Drive server in {mode} mode...')
+
+        if mode == 'http':
+            logger.info(f'HTTP server will listen on {host}:{port}')
+            mcp_server.start(mode="http", host=host, port=port)
+        else:
+            mcp_server.start(mode="stdio")
+
     except KeyboardInterrupt:
         logger.info('Server stopped by user')
     except Exception as e:
