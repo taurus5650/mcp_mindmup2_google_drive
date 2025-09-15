@@ -1,0 +1,18 @@
+[project]
+name = "mcp-mindmup2-google-drive"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "taurus5650",email = "taurus_5650@hotmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pytest (>=8.4.2,<9.0.0)",
+    "pydantic (>=2.11.9,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
