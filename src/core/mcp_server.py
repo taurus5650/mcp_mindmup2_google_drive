@@ -85,12 +85,57 @@ class MCPServer:
                 return {"error": "MindMup manager not initialized"}
 
             try:
-                result = await self.mindmup_manager.load_minmdup(file_id=file_id)
+                # Load file content
+                load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
+                if not load_result.success:
+                    return {"error": f"Failed to load file: {load_result.error}"}
 
-                if result.success:
-                    return result.data
-                else:
-                    return {"error": result.error}
+                # Parse the content
+                parse_result = await self.mindmup_manager.parse_mindmup_file(load_result.data)
+                if not parse_result.success:
+                    return {"error": f"Failed to parse mindmap: {parse_result.error}"}
+
+                mindmap = parse_result.data
+
+                # Extract detailed information including all nodes
+                def extract_node_info(node):
+                    """Extract node information recursively."""
+                    node_info = {
+                        "id": node.id,
+                        "title": node.title,
+                        "children": []
+                    }
+
+                    if hasattr(node, 'attributes') and node.attributes:
+                        node_info["attributes"] = node.attributes
+
+                    if hasattr(node, 'position') and node.position:
+                        node_info["position"] = node.position
+
+                    for child in node.children:
+                        node_info["children"].append(extract_node_info(child))
+
+                    return node_info
+
+                # Get all text content
+                all_text = mindmap.extract_text_content()
+
+                return {
+                    "mindmap": {
+                        "title": mindmap.title,
+                        "id": mindmap.id,
+                        "format_version": mindmap.format_version,
+                        "node_count": mindmap.get_node_count(),
+                        "root_node": extract_node_info(mindmap.root_node),
+                        "all_text_content": all_text,
+                        "metadata": {
+                            "created_time": mindmap.created_time.isoformat() if mindmap.created_time else None,
+                            "modified_time": mindmap.modified_time.isoformat() if mindmap.modified_time else None,
+                            "author": mindmap.author
+                        }
+                    },
+                    "file_id": file_id
+                }
 
             except Exception as e:
                 logger.error(f'get_mindmap_content error: {e}')
@@ -108,6 +153,9 @@ class MCPServer:
                 # Convert search results to dictionaries
                 results_data = []
                 for result in search_results:
+                    # Get all text content from the mindmap
+                    all_text = result.mindmap.extract_text_content()
+
                     results_data.append({
                         "file_id": result.file_id,
                         "file_name": result.file_name,
@@ -116,7 +164,10 @@ class MCPServer:
                         "mindmap": {
                             "title": result.mindmap.title,
                             "id": result.mindmap.id,
-                            "format_version": result.mindmap.format_version
+                            "format_version": result.mindmap.format_version,
+                            "node_count": result.mindmap.get_node_count(),
+                            "all_text_content": all_text,
+                            "preview": all_text[:500] + "..." if len(all_text) > 500 else all_text
                         }
                     })
 

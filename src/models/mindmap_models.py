@@ -66,6 +66,26 @@ class MindMap:
     description: Optional[str] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def format_version(self) -> str:
+        """Compatibility property for format_version"""
+        return self.version
+
+    @property
+    def id(self) -> str:
+        """Get the root node ID"""
+        return self.root_node.id
+
+    @property
+    def created_time(self) -> Optional[datetime]:
+        """Compatibility property for created_time"""
+        return self.created_at
+
+    @property
+    def modified_time(self) -> Optional[datetime]:
+        """Compatibility property for modified_time"""
+        return self.modified_at
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()
@@ -107,6 +127,10 @@ class MindMap:
 
         collect_text(self.root_node)
         return texts
+
+    def extract_text_content(self) -> List[str]:
+        """Extract all text content (compatibility method)"""
+        return self.get_all_text()
 
     def to_dict(self) -> Dict[str, Any]:
         """轉換為字典格式"""

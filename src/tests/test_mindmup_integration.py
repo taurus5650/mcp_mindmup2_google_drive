@@ -127,7 +127,7 @@ async def test_search_all_mindmup_files(mindmup_manager):
 
 @pytest.mark.asyncio
 async def test_load_mindmup_content(mindmup_manager):
-    """Test loading content of a specific MindMup file."""
+    """Test loading and parsing content of a specific MindMup file."""
     # First find a MindMup file
     all_files = await mindmup_manager.search_mindmup_files()
 
@@ -135,14 +135,35 @@ async def test_load_mindmup_content(mindmup_manager):
         test_file = all_files[0]
         logger.info(f'Testing content loading for: {test_file.name} (ID: {test_file.id})')
 
-        result = await mindmup_manager.load_minmdup(file_id=test_file.id)
+        # Test loading file content
+        load_result = await mindmup_manager.load_mindmup(file_id=test_file.id)
+        assert hasattr(load_result, 'success'), "Load result should have success attribute"
 
-        assert hasattr(result, 'success'), "Result should have success attribute"
-        if result.success:
-            assert result.data is not None, "Should return mindmap data"
-            logger.info(f'Successfully loaded mindmap content')
+        if load_result.success:
+            assert load_result.data is not None, "Should return file content"
+            logger.info(f'Successfully loaded file content ({len(load_result.data)} characters)')
+
+            # Test parsing the content
+            parse_result = await mindmup_manager.parse_mindmup_file(load_result.data)
+            assert hasattr(parse_result, 'success'), "Parse result should have success attribute"
+
+            if parse_result.success:
+                mindmap = parse_result.data
+                logger.info(f'Successfully parsed mindmap: {mindmap.title}')
+                logger.info(f'Node count: {mindmap.get_node_count()}')
+
+                # Test text extraction
+                all_text = mindmap.extract_text_content()
+                logger.info(f'Extracted text content: {len(all_text)} characters')
+                logger.info(f'Text preview: {all_text[:200]}...' if len(all_text) > 200 else f'Text content: {all_text}')
+
+                assert mindmap.title is not None, "Mindmap should have a title"
+                assert mindmap.root_node is not None, "Mindmap should have a root node"
+                assert isinstance(all_text, list), "Text content should be a list"
+            else:
+                logger.warning(f'Failed to parse mindmap: {parse_result.error}')
         else:
-            logger.warning(f'Failed to load mindmap: {result.error}')
+            logger.warning(f'Failed to load mindmap: {load_result.error}')
     else:
         pytest.skip("No MindMup files available for content testing")
 

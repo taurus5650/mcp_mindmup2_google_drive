@@ -78,17 +78,31 @@ class MindMupManager:
 
         return mindmup_files
 
-    async def load_minmdup(self, file_id: str) -> OperationResult:
-        """Get Mindmup and anlaysis."""
+    async def load_mindmup(self, file_id: str) -> OperationResult:
+        """Download and return MindMup file content."""
         try:
-            logger.info(f'load_minmdup: {file_id}')
-            return OperationResult.ok({
-                "message": "MindMup loaded successfully",
-                "file_id": file_id
-            })
+            logger.info(f'load_mindmup: {file_id}')
+
+            # Download file content from Google Drive
+            download_result = await self.client.download_file_content(file_id)
+            if not download_result.success:
+                return download_result
+
+            file_content = download_result.data.get('content')
+            if not file_content:
+                return OperationResult.fail('No content found in downloaded file')
+
+            logger.info(f'Successfully loaded MindMup file: {download_result.data.get("name")}')
+            return OperationResult.ok(file_content)
+
         except Exception as e:
-            logger.error(f'load_minmduperror: {e}')
-            return OperationResult.fail(f'load_minmdup error: {e}')
+            logger.error(f'load_mindmup error: {e}')
+            return OperationResult.fail(f'load_mindmup error: {e}')
+
+    async def load_minmdup(self, file_id: str) -> OperationResult:
+        """Get Mindmup and analysis (deprecated - use load_mindmup)."""
+        logger.warning('load_minmdup is deprecated, use load_mindmup instead')
+        return await self.load_mindmup(file_id)
 
     async def parse_mindmup_file(self, file_content: str) -> OperationResult:
         """Parse Mindmup content."""

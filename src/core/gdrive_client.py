@@ -98,3 +98,41 @@ class GoogleDriveClient:
         except Exception as e:
             logger.error(f'Error of list files: {e}')
             return error_result(error=f'Error of list files: {e}')
+
+    async def download_file_content(self, file_id: str) -> OperationResult:
+        """Download file content from Google Drive."""
+        try:
+            logger.info(f'Downloading file content: {file_id}')
+
+            # Get file metadata first
+            file_metadata = await self._run_sync(
+                lambda: self.service.files().get(fileId=file_id, fields='id,name,mimeType,size').execute()
+            )
+
+            # Download file content
+            file_content = await self._run_sync(
+                lambda: self.service.files().get_media(fileId=file_id).execute()
+            )
+
+            # Decode content based on mime type
+            if isinstance(file_content, bytes):
+                try:
+                    content_str = file_content.decode('utf-8')
+                except UnicodeDecodeError:
+                    content_str = file_content.decode('utf-8', errors='ignore')
+            else:
+                content_str = str(file_content)
+
+            logger.info(f'Successfully downloaded file: {file_metadata.get("name")} ({len(content_str)} characters)')
+
+            return success_result({
+                'file_id': file_id,
+                'name': file_metadata.get('name'),
+                'mime_type': file_metadata.get('mimeType'),
+                'size': file_metadata.get('size'),
+                'content': content_str
+            })
+
+        except Exception as e:
+            logger.error(f'Error downloading file {file_id}: {e}')
+            return error_result(error=f'Error downloading file {file_id}: {e}')
