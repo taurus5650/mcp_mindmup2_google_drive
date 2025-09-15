@@ -1,5 +1,4 @@
 # Credentials
-.env.dev
 deployment/credentials
 
 # Byte-compiled / optimized / DLL files

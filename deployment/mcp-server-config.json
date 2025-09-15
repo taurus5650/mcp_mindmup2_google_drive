@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mindmup-gdrive": {
+      "command": "python",
+      "args": ["/Users/shyin/Documents/shyin-personal-git-new/mcp_mindmup2_google_drive/main.py"],
+      "env": {
+        "PYTHONPATH": "/Users/shyin/Documents/shyin-personal-git-new/mcp_mindmup2_google_drive",
+        "ENV": "production"
+      }
+    }
+  }
+}
