@@ -19,6 +19,7 @@ class MCPServer:
         self.gdrive_client = None
         self.mindmup_manager = None
         self._setup_tools()
+        self._setup_sse_routes()
 
     def _setup_tools(self):
         """Register all MCP tools."""
@@ -26,7 +27,7 @@ class MCPServer:
         @self.mcp.tool()
         async def ping() -> Dict[str, Any]:
             """Health check endpoint for SSE mode."""
-            return {"status": "ok", "timestamp": time.time()}
+            return {"status": "pong", "timestamp": time.time(), "server": "MCP MindMup Google Drive"}
 
         @self.mcp.tool()
         async def list_gdrive_files(
@@ -217,6 +218,22 @@ class MCPServer:
                 logger.error(f'list_accessible_folders error: {e}')
                 return {"error": str(e)}
 
+    def _setup_sse_routes(self):
+        """Setup SSE-specific routes for keep-alive."""
+
+        @self.mcp.get("/ping")
+        async def ping_endpoint():
+            """HTTP ping endpoint for SSE keep-alive."""
+            return {"status": "pong", "timestamp": time.time(), "server": "MCP MindMup Google Drive"}
+
+        @self.mcp.get("/health")
+        async def health_endpoint():
+            """Health check endpoint."""
+            return {
+                "status": "healthy",
+                "timestamp": time.time(),
+                "clients_initialized": self.gdrive_client is not None and self.mindmup_manager is not None
+            }
 
     async def initialize_clients(self):
         """Initialize Google Drive and MindMup clients."""
