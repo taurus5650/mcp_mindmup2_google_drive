@@ -10,7 +10,12 @@ requires-python = ">=3.13"
 dependencies = [
     "pytest (>=8.4.2,<9.0.0)",
     "pydantic (>=2.11.9,<3.0.0)",
-    "python-dotenv (>=1.1.1,<2.0.0)"
+    "python-dotenv (>=1.1.1,<2.0.0)",
+    "google (>=3.0.0,<4.0.0)",
+    "google-api-python-client (>=2.181.0,<3.0.0)",
+    "google-auth-httplib2 (>=0.2.0,<0.3.0)",
+    "google-auth-oauthlib (>=1.2.2,<2.0.0)",
+    "pytest-asyncio (>=1.2.0,<2.0.0)"
 ]
 
 

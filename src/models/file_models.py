@@ -9,7 +9,7 @@ class MimeType(str, Enum):
     JSON = 'application/json'
     TEXT = 'text/plain'
     FOLDER = 'application/vnd.google-apps.folder'
-    MINDMUP = 'application/json'
+    MINDMUP = 'application/vnd.mindmup'
 
 
 class FileStatus(str, Enum):
@@ -40,12 +40,28 @@ class FileInfo:
         return self.mime_type == MimeType.FOLDER
 
     def is_mindmup(self) -> bool:
-        return (
-            self.mime_type == MimeType.JSON and
-            (self.name.endswith('.mup') or
-             'mindmap' in self.name.lower() or
-             'mindmup' in self.name.lower())
-        )
+        # Check for official MindMup MIME type
+        if self.mime_type == MimeType.MINDMUP:
+            return True
+
+        name_lower = self.name.lower()
+        # Check for MindMup files by name patterns
+        if (self.name.endswith('.mup') or
+            'mindmap' in name_lower or
+            'mindmup' in name_lower or
+            'mind map' in name_lower or
+            '.mup' in name_lower):
+            return True
+
+        # Check for JSON files that might be MindMup files
+        if self.mime_type == MimeType.JSON and (
+            'mind' in name_lower or
+            'map' in name_lower or
+            'diagram' in name_lower
+        ):
+            return True
+
+        return False
 
 
 @dataclass
