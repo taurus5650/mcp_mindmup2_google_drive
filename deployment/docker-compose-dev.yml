@@ -9,6 +9,7 @@ services:
     container_name: mcp_mindmup_container
     environment:
       - GOOGLE_DRIVE_CREDENTIALS_FILE=/app/credentials/google_service_account.json
+      - MCP_MODE=http
     ports:
       - '9801:9801'
     volumes:
