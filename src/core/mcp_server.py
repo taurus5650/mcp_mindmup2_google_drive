@@ -242,12 +242,6 @@ class MCPServer:
         """Initialize Google Drive and MindMup clients."""
         try:
             self.gdrive_client = GoogleDriveClient()
-
-            creds_file = os.getenv('GOOGLE_DRIVE_CREDENTIALS_FILE')
-            if creds_file:
-                self.gdrive_client.config.google_drive.credentials_file = creds_file
-                logger.info(f'Using credentials file: {creds_file}')
-
             auth_result = await self.gdrive_client.authenticate()
 
             if not auth_result.success:

@@ -1,12 +1,12 @@
 import asyncio
 import functools
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from src.utils.config import get_config
 
 from src.models.file_models import (
     SearchQuery, OperationResult,
@@ -19,7 +19,6 @@ logger = get_logger(__name__)
 
 class GoogleDriveClient:
     def __init__(self):
-        self.config = get_config()
         self.service = None
         self.credentials = None
         self._executor = ThreadPoolExecutor(max_workers=5)
@@ -27,14 +26,20 @@ class GoogleDriveClient:
     async def authenticate(self) -> OperationResult:
         try:
             logger.info('Authenticating with Google Drive.')
-            creds_file = self.config.google_drive.credentials_file
+            creds_file = os.getenv('GOOGLE_DRIVE_CREDENTIALS_FILE')
             if not creds_file or not Path(creds_file).exists():
                 return error_result(error=f'Credentials file not found: {creds_file}')
+
+            # Default scopes for Google Drive
+            scopes = [
+                'https://www.googleapis.com/auth/drive',
+                'https://www.googleapis.com/auth/drive.file'
+            ]
 
             # Load credentials from JSON file
             self.credentials = service_account.Credentials.from_service_account_file(
                 creds_file,
-                scopes=self.config.google_drive.scopes
+                scopes=scopes
             )
 
             # Build service
