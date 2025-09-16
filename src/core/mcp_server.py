@@ -1,9 +1,7 @@
 import asyncio
-import os
 import time
 from typing import Any, Dict, Optional
 
-from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 from src.core.gdrive_client import GoogleDriveClient
@@ -228,17 +226,6 @@ class MCPServer:
                 "clients_initialized": self.gdrive_client is not None and self.mindmup_manager is not None
             })
 
-    def _load_environment(self):
-        """Load environment variables from deployment directory."""
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        env_file = '.env.dev' if os.getenv('ENV', 'development') == 'development' else '.env.prod'
-        env_path = os.path.join(project_root, 'deployment', env_file)
-
-        logger.info(f'Project root: {project_root}')
-        logger.info(f'Current working directory: {os.getcwd()}')
-        logger.info(f'Loading env from: {env_path}')
-
-        load_dotenv(env_path)
 
     async def initialize_clients(self):
         """Initialize Google Drive and MindMup clients."""
@@ -259,8 +246,6 @@ class MCPServer:
 
     def start(self, mode: str = 'stdio'):
         """Start the MCP server."""
-        self._load_environment()
-
         # Initialize clients
         success = asyncio.run(self.initialize_clients())
         if not success:
