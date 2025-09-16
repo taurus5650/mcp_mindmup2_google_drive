@@ -1,4 +1,6 @@
-# mindmup_mcp
+# Google Drive MindMup MCP
+
+Readme drafting ...
 
 
 ```commandline
