@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  mcp_mindmup:
+    image: mcp_mindmup:latest
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    container_name: mcp_mindmup_container
+    environment:
+      - GOOGLE_DRIVE_CREDENTIALS_FILE=${GOOGLE_DRIVE_CREDENTIALS_FILE}
+      - MCP_MODE=${MCP_MODE:-http}
+    ports:
+      - '9802:9802'
+    volumes:
+      - ..:/app
+    command: ['python3','run.py']

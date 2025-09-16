@@ -1,1 +1,0 @@
-# mindmup_mcp

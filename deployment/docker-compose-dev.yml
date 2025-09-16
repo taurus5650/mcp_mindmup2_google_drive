@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  mcp_mindmup:
+    image: mcp_mindmup:latest
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    container_name: mcp_mindmup_container
+    environment:
+      - GOOGLE_DRIVE_CREDENTIALS_FILE=/app/credentials/google_service_account.json
+      - MCP_MODE=http
+    ports:
+      - '9802:9802'
+    volumes:
+      - ..:/app
+      - ./credentials:/app/credentials
+    command: ['python3','run.py']

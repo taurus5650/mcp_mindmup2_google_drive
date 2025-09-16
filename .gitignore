@@ -1,7 +1,11 @@
+deployment/credentials
+credentials
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
+.idea
 
 # C extensions
 *.so
