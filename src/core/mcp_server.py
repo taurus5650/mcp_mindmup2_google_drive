@@ -91,7 +91,8 @@ class MCPServer:
                 return {"error": f"Failed to parse mindmap: {parse_result.error}"}
 
             mindmap = parse_result.data
-            all_text = mindmap.extract_text_content()
+            all_text_list = mindmap.extract_text_content()
+            all_text = " ".join(all_text_list) if all_text_list else ""
 
             return {
                 "mindmap": {
@@ -124,7 +125,8 @@ class MCPServer:
 
             results_data = []
             for result in search_results:
-                all_text = result.mindmap.extract_text_content()
+                all_text_list = result.mindmap.extract_text_content()
+                all_text = " ".join(all_text_list) if all_text_list else ""
 
                 results_data.append({
                     "file_id": result.file_id,

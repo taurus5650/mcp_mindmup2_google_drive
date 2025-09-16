@@ -90,10 +90,10 @@ class MindMap:
     def get_all_nodes(self) -> List[MindMapNode]:
         nodes = []
 
-    def collect_nodes(node: MindMapNode):
-        nodes.append(node)
-        for child in node.children:
-            collect_nodes(child)
+        def collect_nodes(node: MindMapNode):
+            nodes.append(node)
+            for child in node.children:
+                collect_nodes(child)
 
         collect_nodes(self.root_node)
         return nodes
@@ -107,10 +107,10 @@ class MindMap:
     def get_all_text(self) -> List[str]:
         texts = []
 
-    def collect_text(node: MindMapNode):
-        texts.append(node.title)
-        for child in node.children:
-            collect_text(child)
+        def collect_text(node: MindMapNode):
+            texts.append(node.title)
+            for child in node.children:
+                collect_text(child)
 
         collect_text(self.root_node)
         return texts
