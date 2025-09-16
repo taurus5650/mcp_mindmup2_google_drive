@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 class MCPServer:
     def __init__(self):
-        self.mcp = FastMCP('Mindmup Google Drive Integration', host='0.0.0.0', port=9801)
+        self.mcp = FastMCP('Mindmup Google Drive Integration', host='0.0.0.0', port=9802)
         self.gdrive_client = None
         self.mindmup_manager = None
         self._setup_tools()

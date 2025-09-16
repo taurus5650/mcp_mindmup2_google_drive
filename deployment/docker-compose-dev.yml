@@ -11,7 +11,7 @@ services:
       - GOOGLE_DRIVE_CREDENTIALS_FILE=/app/credentials/google_service_account.json
       - MCP_MODE=http
     ports:
-      - '9801:9801'
+      - '9802:9802'
     volumes:
       - ..:/app
       - ./credentials:/app/credentials

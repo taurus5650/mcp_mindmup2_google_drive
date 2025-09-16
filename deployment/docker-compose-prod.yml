@@ -11,7 +11,7 @@ services:
       - GOOGLE_DRIVE_CREDENTIALS_FILE=${GOOGLE_DRIVE_CREDENTIALS_FILE}
       - MCP_MODE=${MCP_MODE:-http}
     ports:
-      - '9801:9801'
+      - '9802:9802'
     volumes:
       - ..:/app
     command: ['python3','run.py']
