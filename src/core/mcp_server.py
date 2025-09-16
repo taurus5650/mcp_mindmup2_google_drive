@@ -212,19 +212,21 @@ class MCPServer:
     def _setup_sse_routes(self):
         """Setup SSE-specific routes for keep-alive."""
 
-        @self.mcp.get("/ping")
-        async def ping_endpoint():
+        @self.mcp.custom_route('/ping', methods=['GET'])
+        async def ping_endpoint(request):
             """HTTP ping endpoint for SSE keep-alive."""
-            return {"status": "pong", "timestamp": time.time(), "server": "MCP MindMup Google Drive"}
+            from starlette.responses import JSONResponse
+            return JSONResponse({"status": "pong", "timestamp": time.time(), "server": "MCP MindMup Google Drive"})
 
-        @self.mcp.get("/health")
-        async def health_endpoint():
+        @self.mcp.custom_route('/health', methods=['GET'])
+        async def health_endpoint(request):
             """Health check endpoint."""
-            return {
+            from starlette.responses import JSONResponse
+            return JSONResponse({
                 "status": "healthy",
                 "timestamp": time.time(),
                 "clients_initialized": self.gdrive_client is not None and self.mindmup_manager is not None
-            }
+            })
 
     def _load_environment(self):
         """Load environment variables from deployment directory."""

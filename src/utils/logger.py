@@ -32,6 +32,7 @@ class SimpleLogger:
 
         # Console settings
         if console:
+            console_handler = logging.StreamHandler(sys.stdout)
             if json_format:
                 console_handler.setFormatter(JsonFormatter())
             else:
@@ -83,6 +84,9 @@ class SimpleLogger:
                     self._logger.name = caller_name
         finally:
             del frame
+
+        # Actually log the message
+        getattr(self._logger, level)(message, extra=log_extra)
 
     def debug(self, message: str, extra: Dict[str, Any] = None):
         """Log debug message."""
