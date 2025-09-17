@@ -3,6 +3,7 @@
 A Model Context Protocol (MCP) server that provides seamless integration between MindMup mind maps and Google Drive. This server enables you to search, retrieve, and parse MindMup files stored in your Google Drive directly through the MCP interface.
 
 ## 💫 Result
+![ezgif-5b4a0eb3a275f8.gif](readme/ezgif-5b4a0eb3a275f8.gif)
 
 ## ✨ Feature
 
