@@ -72,7 +72,7 @@ class MindMupManager:
 
         for query in queries:
             result = await self.client.list_files(query=query)
-            if not result.success:
+            if result.success:
                 files = result.data.get('files', [])
                 for file_info in files:
                     if file_info.is_mindmup() and file_info not in mindmup_files:
