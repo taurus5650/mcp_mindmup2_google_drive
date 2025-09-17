@@ -1,5 +1,5 @@
 import asyncio
-import time
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -14,13 +14,18 @@ logger = get_logger(__name__)
 
 class MCPServer:
     def __init__(self):
-        self.mcp = FastMCP('Mindmup Google Drive Integration', host='0.0.0.0', port=9802)
+        self.mcp = FastMCP(
+            name='Mindmup2 Google Drive MCP',
+            host='0.0.0.0',
+            port=9802
+        )
         self.gdrive_client = None
         self.mindmup_manager = None
         self._setup_tools()
         self._setup_sse_routes()
 
-    async def list_gdrive_files_tool(self, max_results: int = 10, file_type: Optional[str] = None, name_contains: Optional[str] = None) -> Dict[str, Any]:
+    async def list_gdrive_files_tool(
+            self, max_results: int = 10, file_type: Optional[str] = None, name_contains: Optional[str] = None) -> Dict[str, Any]:
         """List files from Google Drive with optional filtering."""
         if not self.gdrive_client:
             return {"error": "Google Drive client not initialized."}
@@ -62,6 +67,7 @@ class MCPServer:
                     "shared": file_info.shared,
                     "owned_by_me": file_info.owned_by_me
                 })
+            logger.info(f'search_mindmaps_tool: {files_data}')
 
             return {
                 "files": files_data,
@@ -69,7 +75,7 @@ class MCPServer:
             }
 
         except Exception as e:
-            logger.error(f'search_mindmaps error: {e}')
+            logger.error(f'search_mindmaps_tool error: {e}')
             return {"error": str(e)}
 
     async def get_mindmap_content_tool(self, file_id: str) -> Dict[str, Any]:
@@ -82,15 +88,14 @@ class MCPServer:
             if not load_result.success:
                 return {"error": f"Failed to load file: {load_result.error}"}
 
-            parse_result = await self.mindmup_manager.parse_mindmup_file(load_result.data)
+            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
             if not parse_result.success:
                 return {"error": f"Failed to parse mindmap: {parse_result.error}"}
 
             mindmap = parse_result.data
             all_text_list = mindmap.extract_text_content()
-            all_text = " ".join(all_text_list) if all_text_list else ""
-
-            return {
+            all_text = ' '.join(all_text_list) if all_text_list else ''
+            return_data = {
                 "mindmap": {
                     "title": mindmap.title,
                     "id": mindmap.id,
@@ -106,6 +111,8 @@ class MCPServer:
                 },
                 "file_id": file_id
             }
+            logger.info(f'get_mindmap_content_tool: {return_data}')
+            return return_data
 
         except Exception as e:
             logger.error(f'get_mindmap_content error: {e}')
@@ -138,7 +145,7 @@ class MCPServer:
                         "preview": all_text[:500] + "..." if len(all_text) > 500 else all_text
                     }
                 })
-
+            logger.info(f'search_and_parse_mindmaps_tool: {results_data}')
             return {
                 "results": results_data,
                 "count": len(results_data)
@@ -167,7 +174,7 @@ class MCPServer:
                     "shared": folder.shared,
                     "owned_by_me": folder.owned_by_me
                 })
-
+            logger.info(f'list_accessible_folders_tool: {folders_data}')
             return {
                 "folders": folders_data,
                 "count": len(folders_data)
@@ -212,15 +219,17 @@ class MCPServer:
         async def ping_endpoint(request):
             """HTTP ping endpoint for SSE keep-alive."""
             from starlette.responses import JSONResponse
-            return JSONResponse({"status": "pong", "timestamp": time.time(), "server": "MCP MindMup Google Drive"})
+            return JSONResponse({
+                "time": datetime.now(),
+                "server": "MCP MindMup Google Drive"
+            })
 
         @self.mcp.custom_route('/health', methods=['GET'])
         async def health_endpoint(request):
             """Health check endpoint."""
             from starlette.responses import JSONResponse
             return JSONResponse({
-                "status": "healthy",
-                "timestamp": time.time(),
+                "time": datetime.now(),
                 "clients_initialized": self.gdrive_client is not None and self.mindmup_manager is not None
             })
 
