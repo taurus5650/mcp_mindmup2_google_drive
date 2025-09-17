@@ -5,6 +5,7 @@ from src.core.mindmup_parser import MindMupParser
 from src.models.file_models import SearchQuery, FileInfo, OperationResult
 from src.models.mindmap_models import MindMapSearchResult
 from src.utils.logger import get_logger
+from src.utils.enum import MimeType
 
 logger = get_logger(__name__)
 
@@ -28,6 +29,7 @@ class MindMupManager:
             files = await self._search_all_drive_for_mindmup()
             all_mindmup_files.extend(files)
 
+        logger.info(f'search_mindmup_files: {all_mindmup_files}')
         return all_mindmup_files
 
     async def _search_folder_for_mindmup(self, folder_id: str) -> List[FileInfo]:
@@ -48,13 +50,13 @@ class MindMupManager:
 
         for file_info in files:
             if file_info.is_mindmup():
-                logger.info(f'_search_folder_for_mindmup found: {file_info.id}: {file_info.name}')
                 mindmup_files.append(file_info)
             elif file_info.is_folder():
-                logger.info(f'_search_folder_for_mindmup found sub folder: {file_info.id}: {file_info.name}')
+                # subfolder
                 subfolder_files = await self._search_folder_for_mindmup(file_info.id)
                 mindmup_files.extend(subfolder_files)
 
+        logger.info(f'_search_folder_for_mindmup: {file_info}')
         return mindmup_files
 
     async def _search_all_drive_for_mindmup(self) -> List[FileInfo]:
@@ -65,7 +67,7 @@ class MindMupManager:
             SearchQuery(query='mindmup', max_results=100),
             SearchQuery(query='mindmap', max_results=100),
             SearchQuery(query='.mup', max_results=100),
-            SearchQuery(mime_types=['application/vnd.mindmup'], max_results=100)
+            SearchQuery(mime_types=[MimeType.MINDMUP], max_results=100)
         ]
 
         for query in queries:
@@ -76,6 +78,7 @@ class MindMupManager:
                     if file_info.is_mindmup() and file_info not in mindmup_files:
                         mindmup_files.append(file_info)
 
+        logger.info(f'_search_all_drive_for_mindmup: {mindmup_files}')
         return mindmup_files
 
     async def load_mindmup(self, file_id: str) -> OperationResult:
@@ -92,17 +95,12 @@ class MindMupManager:
             if not file_content:
                 return OperationResult.fail('No content found in downloaded file')
 
-            logger.info(f'Successfully loaded MindMup file: {download_result.data.get("name")}')
+            logger.info(f'load_mindmup success: {download_result.data.get("name")}')
             return OperationResult.ok(file_content)
 
         except Exception as e:
             logger.error(f'load_mindmup error: {e}')
             return OperationResult.fail(f'load_mindmup error: {e}')
-
-    async def load_minmdup(self, file_id: str) -> OperationResult:
-        """Get Mindmup and analysis (deprecated - use load_mindmup)."""
-        logger.warning('load_minmdup is deprecated, use load_mindmup instead')
-        return await self.load_mindmup(file_id)
 
     async def parse_mindmup_file(self, file_content: str) -> OperationResult:
         """Parse Mindmup content."""
@@ -121,8 +119,8 @@ class MindMupManager:
 
         for file_info in mindmup_files:
             try:
-                # Debug logging
-                logger.info(f'Attempting to load mindmup for file: {file_info.id}, self type: {type(self)}, has load_mindmup: {hasattr(self, "load_mindmup")}')
+                logger.info(
+                    f'Attempting to load mindmup for file: {file_info.id}, self type: {type(self)}, has load_mindmup: {hasattr(self, "load_mindmup")}')
                 load_result = await self.load_mindmup(file_info.id)
                 if load_result.success:
                     parse_result = await self.parse_mindmup_file(load_result.data)
@@ -136,7 +134,7 @@ class MindMupManager:
                         )
                         search_results.append(search_result)
 
-                logger.info(f'search_and_parse_mindmups:{file_info.name}')
+                logger.info(f'search_and_parse_mindmups:{search_results}')
 
             except Exception as e:
                 logger.error(f'search_and_parse_mindmups error:{e}')

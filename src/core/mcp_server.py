@@ -205,7 +205,6 @@ class MCPServer:
 
     def _setup_tools(self):
         """Register all MCP tools."""
-        self.mcp.tool()(self.ping_tool)
         self.mcp.tool()(self.list_gdrive_files_tool)
         self.mcp.tool()(self.search_mindmaps_tool)
         self.mcp.tool()(self.get_mindmap_content_tool)
@@ -220,7 +219,7 @@ class MCPServer:
             """HTTP ping endpoint for SSE keep-alive."""
             from starlette.responses import JSONResponse
             return JSONResponse({
-                "time": datetime.now(),
+                "time": datetime.now().isoformat(),
                 "server": "MCP MindMup Google Drive"
             })
 
@@ -229,7 +228,7 @@ class MCPServer:
             """Health check endpoint."""
             from starlette.responses import JSONResponse
             return JSONResponse({
-                "time": datetime.now(),
+                "time": datetime.now().isoformat(),
                 "clients_initialized": self.gdrive_client is not None and self.mindmup_manager is not None
             })
 
@@ -258,14 +257,14 @@ class MCPServer:
             logger.error('Failed to initialize clients. Exiting.')
             return
 
-        logger.info('Clients ready. Starting FastMCP server...')
+        logger.info('Clients ready. Starting FastMCP server')
 
         # Start server
         if mode == 'http':
-            logger.info('Starting FastMCP server in SSE mode...')
+            logger.info('Starting FastMCP server in SSE mode')
             self.mcp.run(transport='sse')
         else:
-            logger.info('Starting FastMCP server in stdio mode...')
+            logger.info('Starting FastMCP server in stdio mode')
             self.mcp.run()
 
 
