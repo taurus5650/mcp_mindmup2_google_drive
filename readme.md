@@ -45,16 +45,21 @@ src/
 
 ## 🚀 Getting Started
 
+### Prerequisites
 - Python 3.12+
-- Google API client libraries
-- Google Drive API credentials:
-   - 1. Create a project in Google Cloud Console
-   - 2. Enable Google Drive API (Link: https://console.cloud.google.com/apis/library/drive.googleapis.com?authuser=2&project=mcp-minmup2)
-   - 3. Create credentials -- Service Account
-   - 4. Configure authentication, the setup structure kindly refer to Project Structure
+- Google Cloud Platform account
 
-### Docker Deployment
+### Google Drive API Setup
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing one
+3. Enable [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)
+4. Create Service Account credentials:
+   - Go to "IAM & Admin" → "Service Accounts"
+   - Click "Create Service Account"
+   - Download the JSON key file
+5. Place the JSON file at: `deployment/credentials/google_service_account.json`
 
+### Run the Server
 For development:
 ```bash
 make run-dev-docker
@@ -65,7 +70,6 @@ For production:
 make run-prod
 ```
 ### MCP Client Configuration
-
 Add this server to your MCP client configuration:
 
 ```json
