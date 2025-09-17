@@ -20,10 +20,6 @@ class MCPServer:
         self._setup_tools()
         self._setup_sse_routes()
 
-    async def ping_tool(self) -> Dict[str, Any]:
-        """Health check endpoint for SSE mode."""
-        return {"status": "pong", "timestamp": time.time(), "server": "MCP MindMup Google Drive"}
-
     async def list_gdrive_files_tool(self, max_results: int = 10, file_type: Optional[str] = None, name_contains: Optional[str] = None) -> Dict[str, Any]:
         """List files from Google Drive with optional filtering."""
         if not self.gdrive_client:
@@ -227,7 +223,6 @@ class MCPServer:
                 "timestamp": time.time(),
                 "clients_initialized": self.gdrive_client is not None and self.mindmup_manager is not None
             })
-
 
     async def initialize_clients(self):
         """Initialize Google Drive and MindMup clients."""
