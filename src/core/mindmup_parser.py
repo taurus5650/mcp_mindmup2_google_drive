@@ -47,7 +47,7 @@ class MindMupParser:
 
         for key, child_data in ideas.items():
             if isinstance(child_data, dict):
-                child_node = MindMupParser._parse_node(child_data)
+                child_node = MindMupParser._parse_node(node_data=child_data)
                 children.append(child_node)
 
         return MindMapNode(
@@ -85,7 +85,7 @@ class MindMupParser:
         if node.children:
             ideas = {}
             for idx, child in enumerate(node.children, 1):
-                ideas[str(idx)] = MindMupParser._node_to_dict(child)
+                ideas[str(idx)] = MindMupParser._node_to_dict(node=child)
             result['ideas'] = ideas
 
         return result
@@ -100,7 +100,7 @@ class MindMupParser:
             for child in node.children:
                 extract_from_node(child)
 
-        extract_from_node(mindmap.root_node)
+        extract_from_node(node=mindmap.root_node)
         return texts
 
     @staticmethod
@@ -112,4 +112,4 @@ class MindMupParser:
                 count += count_nodes(child)
             return count
 
-        return count_nodes(mindmap.root_node)
+        return count_nodes(node=mindmap.root_node)
