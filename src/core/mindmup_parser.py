@@ -101,18 +101,7 @@ class MindMupParser:
 
         return result
 
-    @staticmethod
-    def extract_text_content(mindmap: MindMap) -> List[str]:
-        """提取心智圖中所有節點的文字內容"""
-        texts = []
-
-        def extract_from_node(node: MindMapNode):
-            texts.append(node.title)
-            for child in node.children:
-                extract_from_node(child)
-
-        extract_from_node(node=mindmap.root_node)
-        return texts
+    # extract_text_content 方法已移到 MindMap 類別中，避免重複
 
     @staticmethod
     def get_node_count(mindmap: MindMap) -> int:

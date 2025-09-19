@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from mcp.server.fastmcp import FastMCP
 
 from src.core.gdrive_client import GoogleDriveClient
-from src.core.mindmup_manager import MindMupManager
+from src.core.mindmup_parser import MindMupParser
 from src.models.file_models import SearchQuery
 from src.utils.logger import get_logger
 
@@ -20,10 +20,14 @@ class MCPServer:
     MCP (Model Context Protocol) 伺服器主類別
 
     這是整個系統的核心，負責：
-    1. 初始化和管理 Google Drive 客戶端和 MindMup 管理器
+    1. 初始化和管理 Google Drive 客戶端
     2. 提供給 Claude 的各種工具 (tools)
     3. 處理 Claude 的請求並返回結果
     4. 管理內容長度限制，避免超過 Claude 的處理能力
+
+    重構後移除了 MindMupManager，直接使用：
+    - GoogleDriveClient: 處理 Google Drive 操作
+    - MindMupParser: 靜態方法處理 MindMup 解析
     """
 
     # Claude 內容長度限制 (1MB)
@@ -36,9 +40,8 @@ class MCPServer:
             host='0.0.0.0',
             port=int(os.getenv('MCP_PORT', 9802))
         )
-        # 初始化為 None，在 initialize_clients() 中才會實際初始化
+        # 只需要 GoogleDriveClient
         self.gdrive_client = None
-        self.mindmup_manager = None
 
         # 設定工具和路由
         self._setup_tools()
@@ -75,11 +78,11 @@ class MCPServer:
         工具: 搜尋 MindMup 檔案
         在 Google Drive 中搜尋所有 MindMup 心智圖檔案
         """
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+        if not self.gdrive_client:
+            return {"error": "Google Drive client not initialized"}
 
         try:
-            files = await self.mindmup_manager.search_mindmup_files(folder_id=folder_id)
+            files = await self.gdrive_client.search_mindmup_files(folder_id=folder_id)
             files_data = []
             for file_info in files:
                 files_data.append({
@@ -94,7 +97,7 @@ class MCPServer:
                     "shared": file_info.shared,
                     "owned_by_me": file_info.owned_by_me
                 })
-            logger.info(f'search_mindmaps_tool: {files_data}')
+            logger.info(f'search_mindmaps_tool: found {len(files_data)} files')
 
             return {
                 "files": files_data,
@@ -110,19 +113,25 @@ class MCPServer:
         工具: 取得心智圖內容
         載入並解析指定的心智圖檔案，返回完整的結構化內容
         """
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+        if not self.gdrive_client:
+            return {"error": "Google Drive client not initialized"}
 
         try:
-            load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
-            if not load_result.success:
-                return {"error": f"Failed to load file: {load_result.error}"}
+            # 直接使用 GoogleDriveClient 下載檔案
+            download_result = await self.gdrive_client.download_file_content(file_id)
+            if not download_result.success:
+                return {"error": f"Failed to load file: {download_result.error}"}
 
-            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
-            if not parse_result.success:
-                return {"error": f"Failed to parse mindmap: {parse_result.error}"}
+            file_content = download_result.data.get('content')
+            if not file_content:
+                return {"error": "No content found in downloaded file"}
 
-            mindmap = parse_result.data
+            # 直接使用 MindMupParser 解析檔案
+            try:
+                mindmap = MindMupParser.parse_mindmup_content(file_content)
+            except Exception as parse_error:
+                return {"error": f"Failed to parse mindmap: {parse_error}"}
+
             all_text_list = mindmap.extract_text_content()
             all_text = ' '.join(all_text_list) if all_text_list else ''
 
@@ -147,7 +156,7 @@ class MCPServer:
                 },
                 "file_id": file_id
             }
-            logger.info(f'get_mindmap_content_tool: {return_data}')
+            logger.info(f'get_mindmap_content_tool: success for file {file_id}')
             return return_data
 
         except Exception as e:
@@ -160,38 +169,56 @@ class MCPServer:
         工具: 搜尋並解析心智圖
         組合搜尋和解析功能，一次取得多個心智圖的內容
         """
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+        if not self.gdrive_client:
+            return {"error": "Google Drive client not initialized"}
 
         try:
-            search_results = await self.mindmup_manager.search_and_parse_mindmups(folder_id=folder_id)
+            # 搜尋 MindMup 檔案
+            mindmup_files = await self.gdrive_client.search_mindmup_files(folder_id=folder_id)
 
             results_data = []
 
-            for result in search_results:
-                all_text_list = result.mindmap.extract_text_content()
-                all_text = " ".join(all_text_list) if all_text_list else ""
+            # 逐一載入和解析每個檔案
+            for file_info in mindmup_files:
+                try:
+                    # 下載檔案內容
+                    download_result = await self.gdrive_client.download_file_content(file_info.id)
+                    if download_result.success:
+                        file_content = download_result.data.get('content')
+                        if file_content:
+                            # 解析心智圖
+                            try:
+                                mindmap = MindMupParser.parse_mindmup_content(file_content)
 
-                # Handle large content that exceeds Claude's limit
-                all_text, content_truncated, original_length = self._handle_large_content(all_text, result.file_id)
+                                all_text_list = mindmap.extract_text_content()
+                                all_text = " ".join(all_text_list) if all_text_list else ""
 
-                results_data.append({
-                    "file_id": result.file_id,
-                    "file_name": result.file_name,
-                    "file_url": result.file_url,
-                    "last_modified": result.last_modified.isoformat() if result.last_modified else None,
-                    "mindmap": {
-                        "title": result.mindmap.title,
-                        "id": result.mindmap.id,
-                        "format_version": result.mindmap.format_version,
-                        "node_count": result.mindmap.get_node_count(),
-                        "all_text_content": all_text,
-                        "content_truncated": content_truncated,
-                        "original_content_length": original_length,
-                        "preview": all_text[:500] + "..." if len(all_text) > 500 else all_text
-                    }
-                })
-            logger.info(f'search_and_parse_mindmaps_tool: {results_data}')
+                                # 處理大型內容
+                                all_text, content_truncated, original_length = self._handle_large_content(all_text, file_info.id)
+
+                                results_data.append({
+                                    "file_id": file_info.id,
+                                    "file_name": file_info.name,
+                                    "file_url": file_info.web_view_link,
+                                    "last_modified": file_info.modified_time.isoformat() if file_info.modified_time else None,
+                                    "mindmap": {
+                                        "title": mindmap.title,
+                                        "id": mindmap.id,
+                                        "format_version": mindmap.format_version,
+                                        "node_count": mindmap.get_node_count(),
+                                        "all_text_content": all_text,
+                                        "content_truncated": content_truncated,
+                                        "original_content_length": original_length,
+                                        "preview": all_text[:500] + "..." if len(all_text) > 500 else all_text
+                                    }
+                                })
+                            except Exception as parse_error:
+                                logger.error(f'Failed to parse file {file_info.id}: {parse_error}')
+
+                except Exception as file_error:
+                    logger.error(f'Failed to process file {file_info.id}: {file_error}')
+
+            logger.info(f'search_and_parse_mindmaps_tool: processed {len(results_data)} files')
             return {
                 "results": results_data,
                 "count": len(results_data)
@@ -202,12 +229,12 @@ class MCPServer:
             return {"error": str(e)}
 
     async def list_accessible_folders_tool(self) -> Dict[str, Any]:
-        """List all accessible folders in Google Drive."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+        """列出所有可訪問的 Google Drive 資料夾"""
+        if not self.gdrive_client:
+            return {"error": "Google Drive client not initialized"}
 
         try:
-            folders = await self.mindmup_manager.list_accessible_folders()
+            folders = await self.gdrive_client.list_accessible_folders()
 
             folders_data = []
             for folder in folders:
@@ -220,7 +247,7 @@ class MCPServer:
                     "shared": folder.shared,
                     "owned_by_me": folder.owned_by_me
                 })
-            logger.info(f'list_accessible_folders_tool: {folders_data}')
+            logger.info(f'list_accessible_folders_tool: found {len(folders_data)} folders')
             return {
                 "folders": folders_data,
                 "count": len(folders_data)
@@ -231,24 +258,27 @@ class MCPServer:
             return {"error": str(e)}
 
     async def search_mindmap_content_tool(self, file_id: str, keyword: str, case_sensitive: bool = False) -> Dict[str, Any]:
-        """Search for specific content within a mindmap file."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+        """在心智圖檔案中搜尋特定內容"""
+        if not self.gdrive_client:
+            return {"error": "Google Drive client not initialized"}
 
         try:
-            # Load and parse the mindmap
-            load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
-            if not load_result.success:
-                return {"error": f"Failed to load file: {load_result.error}"}
+            # 下載檔案內容
+            download_result = await self.gdrive_client.download_file_content(file_id)
+            if not download_result.success:
+                return {"error": f"Failed to load file: {download_result.error}"}
 
-            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
-            if not parse_result.success:
-                return {"error": f"Failed to parse mindmap: {parse_result.error}"}
+            file_content = download_result.data.get('content')
+            if not file_content:
+                return {"error": "No content found in downloaded file"}
 
-            mindmap = parse_result.data
+            # 解析心智圖
+            try:
+                mindmap = MindMupParser.parse_mindmup_content(file_content)
+            except Exception as parse_error:
+                return {"error": f"Failed to parse mindmap: {parse_error}"}
 
-            # Search for content
-            from src.core.mindmup_parser import MindMupParser
+            # 搜尋內容
             matches = MindMupParser.search_content(mindmap, keyword, case_sensitive)
 
             logger.info(f'search_mindmap_content_tool: found {len(matches)} matches for "{keyword}" in {file_id}')
@@ -267,24 +297,27 @@ class MCPServer:
             return {"error": str(e)}
 
     async def get_mindmap_node_tool(self, file_id: str, node_id: str, include_siblings: bool = False) -> Dict[str, Any]:
-        """Get specific node with context from a mindmap file."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+        """從心智圖檔案中取得特定節點及其上下文"""
+        if not self.gdrive_client:
+            return {"error": "Google Drive client not initialized"}
 
         try:
-            # Load and parse the mindmap
-            load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
-            if not load_result.success:
-                return {"error": f"Failed to load file: {load_result.error}"}
+            # 下載檔案內容
+            download_result = await self.gdrive_client.download_file_content(file_id)
+            if not download_result.success:
+                return {"error": f"Failed to load file: {download_result.error}"}
 
-            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
-            if not parse_result.success:
-                return {"error": f"Failed to parse mindmap: {parse_result.error}"}
+            file_content = download_result.data.get('content')
+            if not file_content:
+                return {"error": "No content found in downloaded file"}
 
-            mindmap = parse_result.data
+            # 解析心智圖
+            try:
+                mindmap = MindMupParser.parse_mindmup_content(file_content)
+            except Exception as parse_error:
+                return {"error": f"Failed to parse mindmap: {parse_error}"}
 
-            # Get node with context
-            from src.core.mindmup_parser import MindMupParser
+            # 取得節點上下文
             node_context = MindMupParser.get_node_with_context(mindmap, node_id, include_siblings)
 
             if not node_context:
@@ -303,27 +336,31 @@ class MCPServer:
             return {"error": str(e)}
 
     async def get_chunked_mindmap_content_tool(self, file_id: str, chunk_size: int = 50) -> Dict[str, Any]:
-        """Get mindmap content in chunks to handle large files."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+        """分塊取得心智圖內容，用於處理大型檔案"""
+        if not self.gdrive_client:
+            return {"error": "Google Drive client not initialized"}
 
         try:
-            # Load and parse the mindmap
-            load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
-            if not load_result.success:
-                return {"error": f"Failed to load file: {load_result.error}"}
+            # 下載檔案內容
+            download_result = await self.gdrive_client.download_file_content(file_id)
+            if not download_result.success:
+                return {"error": f"Failed to load file: {download_result.error}"}
 
-            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
-            if not parse_result.success:
-                return {"error": f"Failed to parse mindmap: {parse_result.error}"}
+            file_content = download_result.data.get('content')
+            if not file_content:
+                return {"error": "No content found in downloaded file"}
 
-            mindmap = parse_result.data
+            # 解析心智圖
+            try:
+                mindmap = MindMupParser.parse_mindmup_content(file_content)
+            except Exception as parse_error:
+                return {"error": f"Failed to parse mindmap: {parse_error}"}
 
-            # Extract all text content
+            # 提取所有文字內容
             all_text_list = mindmap.extract_text_content()
             total_nodes = len(all_text_list)
 
-            # Create chunks
+            # 建立分塊
             chunks = []
             for i in range(0, total_nodes, chunk_size):
                 chunk_texts = all_text_list[i:i + chunk_size]
@@ -400,7 +437,7 @@ class MCPServer:
         self.mcp.tool()(self.get_mindmap_content_tool)
         self.mcp.tool()(self.search_and_parse_mindmaps_tool)
         self.mcp.tool()(self.list_accessible_folders_tool)
-        # New tools for handling large content
+        # 處理大型內容的工具
         self.mcp.tool()(self.search_mindmap_content_tool)
         self.mcp.tool()(self.get_mindmap_node_tool)
         self.mcp.tool()(self.get_chunked_mindmap_content_tool)
@@ -423,12 +460,12 @@ class MCPServer:
             from starlette.responses import JSONResponse
             return JSONResponse({
                 "time": datetime.now().isoformat(),
-                "clients_initialized": self.gdrive_client is not None and self.mindmup_manager is not None
+                "clients_initialized": self.gdrive_client is not None
             })
 
     async def initialize_clients(self):
         """
-        初始化 Google Drive 客戶端和 MindMup 管理器
+        初始化 Google Drive 客戶端
         這是伺服器啟動時的關鍵步驟
         """
         try:
@@ -441,8 +478,7 @@ class MCPServer:
                     f'Failed to authenticate with Google Drive: {auth_result.error}')
                 return False
 
-            # 初始化 MindMup 管理器（依賴 Google Drive 客戶端）
-            self.mindmup_manager = MindMupManager(self.gdrive_client)
+            # MindMupParser 是靜態類別，不需要初始化
             logger.info('Clients initialized successfully')
             return True
         except Exception as e:

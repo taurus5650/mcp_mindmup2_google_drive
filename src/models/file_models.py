@@ -58,6 +58,20 @@ class FileInfo:
 
         return False
 
+    def is_downloadable(self) -> bool:
+        """判斷檔案是否可以直接下載（排除 Google 文件等）"""
+        # Google 文件類型無法直接下載
+        google_docs_types = [
+            'application/vnd.google-apps.document',
+            'application/vnd.google-apps.spreadsheet',
+            'application/vnd.google-apps.presentation',
+            'application/vnd.google-apps.form',
+            'application/vnd.google-apps.drawing',
+            'application/vnd.google-apps.folder'
+        ]
+
+        return self.mime_type not in google_docs_types
+
 
 @dataclass
 class CreateFileRequest:
@@ -68,6 +82,7 @@ class CreateFileRequest:
     parent_id: Optional[str] = None
 
     def validate(self) -> List[str]:
+        """驗證檔案建立請求的有效性"""
         errors = []
 
         if not self.name.strip():
@@ -76,8 +91,9 @@ class CreateFileRequest:
         if not self.content:
             errors.append('Content cannot be null or empty.')
 
-        invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
-        if any(c in self.name for c in invalid_chars):
+        # 簡化的無效字符檢查
+        invalid_chars = '/<>:*?"|\\'
+        if any(c in invalid_chars for c in self.name):
             errors.append('File name contains invalid characters.')
 
         if self.mime_type == MimeType.JSON:
@@ -150,8 +166,7 @@ class OperationResult:
         return cls(success=False, error=error)
 
 
-MINDMUP_QUERY = f'name contains ".mup" or (name contains "mindmup" and mimeType="{MimeType.JSON}")'
-FOLDER_QUERY = f'mimeType={MimeType.FOLDER}'
+# 移除這些常數，它們會在使用的地方直接定義
 
 
 def parse_drive_time(dt_str: Optional[str]) -> Optional[datetime]:
@@ -165,7 +180,7 @@ def parse_drive_time(dt_str: Optional[str]) -> Optional[datetime]:
 
 
 def create_file_info(data: Dict[str, Any]) -> FileInfo:
-    """Create FileInfo object from Google Drive data."""
+    """從 Google Drive 資料建立 FileInfo 物件"""
     return FileInfo(
         id=data['id'],
         name=data['name'],
@@ -180,27 +195,7 @@ def create_file_info(data: Dict[str, Any]) -> FileInfo:
     )
 
 
-def success_result(data: Any = None) -> OperationResult:
-    return OperationResult(success=True, data=data)
-
-
-def error_result(error: str) -> OperationResult:
-    return OperationResult(success=False, error=error)
-
-
-def build_search_query(text: Optional[str] = None, folder_id: Optional[str] = None,
-                       include_trashed: bool = False) -> str:
-    query = SearchQuery(
-        query=text,
-        folder_id=folder_id,
-        include_trashed=include_trashed
-    )
-    return query.to_drive_query()
-
-
 def validate_file_name(name: str) -> bool:
-    if not name.strip():
-        return False
-
-    invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
-    return not any(c in name for c in invalid_chars)
+    """驗證檔案名稱是否有效"""
+    invalid_chars = '/<>:*?"|\\'
+    return bool(name.strip()) and not any(c in invalid_chars for c in name)
