@@ -1,3 +1,6 @@
+# 檔案模型 - 定義 Google Drive 檔案相關的資料結構
+# 包含檔案資訊、搜尋查詢、操作結果等類別
+
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -7,6 +10,7 @@ from src.utils.enum import MimeType, FileStatus
 
 @dataclass
 class FileInfo:
+    """Google Drive 檔案資訊類別 - 封裝所有檔案相關的元數據"""
     id: str
     name: str
     mime_type: str
@@ -24,15 +28,19 @@ class FileInfo:
     owned_by_me: bool = True
 
     def is_folder(self) -> bool:
+        """判斷是否為資料夾"""
         return self.mime_type == MimeType.FOLDER
 
     def is_mindmup(self) -> bool:
-        # Check for official MindMup MIME type
+        """判斷是否為 MindMup 心智圖檔案
+        透過多種方式檢查：MIME類型、檔案名稱模式、關鍵字
+        """
+        # 檢查官方 MindMup MIME 類型
         if self.mime_type == MimeType.MINDMUP:
             return True
 
         name_lower = self.name.lower()
-        # Check for MindMup files by name patterns
+        # 透過檔案名稱模式檢查 MindMup 檔案
         if (self.name.endswith('.mup') or
             'mindmap' in name_lower or
             'mindmup' in name_lower or
@@ -40,7 +48,7 @@ class FileInfo:
                 '.mup' in name_lower):
             return True
 
-        # Check for JSON files that might be MindMup files
+        # 檢查可能是 MindMup 檔案的 JSON 檔案
         if self.mime_type == MimeType.JSON and (
             'mind' in name_lower or
             'map' in name_lower or
@@ -53,6 +61,7 @@ class FileInfo:
 
 @dataclass
 class CreateFileRequest:
+    """建立檔案請求類別 - 封裝建立新檔案所需的資訊"""
     name: str
     content: str
     mime_type: str = MimeType.JSON
@@ -94,6 +103,7 @@ class CreateFileRequest:
 
 @dataclass
 class SearchQuery:
+    """搜尋查詢類別 - 定義 Google Drive 檔案搜尋的條件"""
     query: Optional[str] = None
     folder_id: Optional[str] = None
     mime_types: List[str] = field(default_factory=list)
@@ -102,7 +112,7 @@ class SearchQuery:
     name_contains: Optional[str] = None
 
     def to_drive_query(self) -> str:
-        """Convert to Google Drive query."""
+        """轉換為 Google Drive API 的查詢字串"""
         conditions = []
 
         if not self.include_trashed:
@@ -126,6 +136,7 @@ class SearchQuery:
 
 @dataclass
 class OperationResult:
+    """操作結果類別 - 標準化的操作返回結果，包含成功/失敗狀態和數據/錯誤訊息"""
     success: bool
     data: Optional[Any] = None
     error: Optional[str] = None

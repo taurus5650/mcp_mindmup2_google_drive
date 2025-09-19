@@ -1,3 +1,6 @@
+# MindMup 管理器 - 整合 Google Drive 客戶端和 MindMup 解析器
+# 提供高層次的心智圖檔案管理功能
+
 from typing import List, Optional
 
 from src.core.gdrive_client import GoogleDriveClient
@@ -12,22 +15,35 @@ logger = get_logger(__name__)
 
 
 class MindMupManager:
+    """
+    MindMup 管理器類別
+    整合 GoogleDriveClient 和 MindMupParser，提供完整的心智圖檔案管理功能：
+    1. 搜尋 MindMup 檔案
+    2. 載入和解析檔案內容
+    3. 組合搜尋和解析功能
+    """
+
     def __init__(self, gdrive_client: GoogleDriveClient):
-        self.client = gdrive_client
-        self.parser = MindMupParser()
+        self.client = gdrive_client      # Google Drive API 客戶端
+        self.parser = MindMupParser()    # MindMup 檔案解析器
 
     async def search_mindmup_files(
             self, folder_id: Optional[str] = None) -> List[FileInfo]:
-        """Search all Mindmup file, inlcluding sub folder."""
+        """
+        搜尋所有 MindMup 檔案，包含子資料夾
+        參數：
+            folder_id: 指定資料夾 ID，若為 None 則搜尋整個 Drive
+        """
 
         all_mindmup_files = []
 
         if folder_id:
+            # 搜尋指定資料夾（包含子資料夾）
             files = await self._search_folder_for_mindmup(folder_id=folder_id)
             all_mindmup_files.extend(files)
 
         else:
-            # Search whole Drive
+            # 搜尋整個 Google Drive
             files = await self._search_all_drive_for_mindmup()
             all_mindmup_files.extend(files)
 
@@ -36,7 +52,7 @@ class MindMupManager:
 
     async def _search_folder_for_mindmup(
             self, folder_id: str) -> List[FileInfo]:
-        """Search Mindmup files in a folder."""
+        """在指定資料夾中搜尋 MindMup 檔案（遞迴搜尋子資料夾）"""
         mindmup_files = []
 
         query = SearchQuery(
@@ -57,7 +73,7 @@ class MindMupManager:
                 mindmup_files.append(file_info)
                 logger.info(f'_search_folder_for_mindmup: found mindmup file {file_info.name}')
             elif file_info.is_folder():
-                # subfolder
+                # 遞迴搜尋子資料夾
                 subfolder_files = await self._search_folder_for_mindmup(file_info.id)
                 mindmup_files.extend(subfolder_files)
 
@@ -65,14 +81,15 @@ class MindMupManager:
         return mindmup_files
 
     async def _search_all_drive_for_mindmup(self) -> List[FileInfo]:
-        """Search whole Google Drive."""
+        """搜尋整個 Google Drive，使用多種關鍵字組合"""
         mindmup_files = []
 
+        # 使用多種搜尋查詢來找到所有可能的 MindMup 檔案
         queries = [
-            SearchQuery(query='mindmup', max_results=100),
-            SearchQuery(query='mindmap', max_results=100),
-            SearchQuery(query='.mup', max_results=100),
-            SearchQuery(mime_types=[MimeType.MINDMUP], max_results=100)
+            SearchQuery(query='mindmup', max_results=100),    # 直接搜尋 'mindmup'
+            SearchQuery(query='mindmap', max_results=100),    # 搜尋 'mindmap'
+            SearchQuery(query='.mup', max_results=100),       # 搜尋 '.mup' 副檔名
+            SearchQuery(mime_types=[MimeType.MINDMUP], max_results=100)  # 按 MIME 類型搜尋
         ]
 
         for query in queries:
@@ -87,11 +104,11 @@ class MindMupManager:
         return mindmup_files
 
     async def load_mindmup(self, file_id: str) -> OperationResult:
-        """Download and return MindMup file content."""
+        """下載並返回 MindMup 檔案內容"""
         try:
             logger.info(f'load_mindmup: {file_id}')
 
-            # Download file content from Google Drive
+            # 從 Google Drive 下載檔案內容
             download_result = await self.client.download_file_content(file_id)
             if not download_result.success:
                 return download_result
@@ -110,7 +127,7 @@ class MindMupManager:
             return OperationResult.fail(f'load_mindmup error: {e}')
 
     async def parse_mindmup_file(self, file_content: str) -> OperationResult:
-        """Parse Mindmup content."""
+        """解析 MindMup 檔案內容"""
         try:
             mindmap = self.parser.parse_mindmup_content(file_content)
             logger.info(f'parse_mindmup_file success: {mindmap.title}')
@@ -121,7 +138,7 @@ class MindMupManager:
 
     async def search_and_parse_mindmups(
             self, folder_id: Optional[str] = None) -> List[MindMapSearchResult]:
-        """Search and parse MindMup files."""
+        """搜尋並解析 MindMup 檔案，返回完整的搜尋結果"""
         search_results = []
         mindmup_files = await self.search_mindmup_files(folder_id=folder_id)
 
@@ -150,8 +167,9 @@ class MindMupManager:
         return search_results
 
     async def list_accessible_folders(self) -> List[FileInfo]:
-        """List all accessible folders."""
+        """列出所有可訪問的資料夾"""
         from src.models.file_models import MimeType
+        # 只搜尋資料夾類型的檔案
         query = SearchQuery(mime_types=[MimeType.FOLDER], max_results=100)
         result = await self.client.list_files(query)
 

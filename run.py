@@ -1,3 +1,6 @@
+# 主程式入口 - 啟動 MCP (Model Context Protocol) 伺服器
+# 這個伺服器專門處理 MindMup 心智圖檔案與 Google Drive 的整合
+
 import os
 import sys
 
@@ -8,10 +11,13 @@ logger = get_logger(__name__)
 
 
 def main():
-    """Main function to start the MCP server."""
+    """啟動 MCP 伺服器的主函數"""
     try:
+        # 從環境變數取得運行模式，預設為 stdio（標準輸入輸出）
         mode = os.getenv('MCP_MODE', 'stdio')
         logger.info(f'Starting MCP MindMup Google Drive server in {mode} mode...')
+
+        # 啟動伺服器 - mcp_server 是在 mcp_server.py 中建立的單例實例
         mcp_server.start(mode)
     except KeyboardInterrupt:
         logger.info('Server stopped by user')

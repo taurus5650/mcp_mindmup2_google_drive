@@ -1,3 +1,6 @@
+# MindMup 解析器 - 負責解析 MindMup 格式的 JSON 檔案
+# 提供解析、轉換、搜尋等功能
+
 import json
 from typing import Dict, Any, List
 
@@ -7,10 +10,18 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 class MindMupParser:
+    """
+    MindMup 檔案解析器
+    負責處理 MindMup 格式的 JSON 檔案，包含：
+    1. 解析 JSON 為心智圖物件
+    2. 將心智圖轉換回 JSON 格式
+    3. 提供內容搜尋功能
+    所有方法都是靜態方法，不需要實例化
+    """
 
     @staticmethod
     def parse_mindmup_content(content: str) -> MindMap:
-        """Parse Mindmup content from a string."""
+        """從字串解析 MindMup 內容"""
         try:
             data = json.loads(content)
             return MindMupParser._parse_mindmup_data(data)
@@ -20,7 +31,7 @@ class MindMupParser:
 
     @staticmethod
     def _parse_mindmup_data(data: Dict[str, Any]) -> MindMap:
-        """Parse mindmup title and node."""
+        """解析 MindMup 的標題和節點結構"""
         if 'title' in data:
             title = data['title']
         else:
@@ -37,13 +48,14 @@ class MindMupParser:
 
     @staticmethod
     def _parse_node(node_data: Dict[str, Any]) -> MindMapNode:
-        """Parse Mindmup node."""
+        """遞迴解析 MindMup 節點，處理樹狀結構"""
         node_id = node_data.get('id', 'root')
         title = node_data.get('title', 'Untitled')
 
         children = []
         ideas = node_data.get('ideas', {})
 
+        # 解析子節點 - MindMup 的 'ideas' 字段包含所有子節點
         for key, child_data in ideas.items():
             if isinstance(child_data, dict):
                 child_node = MindMupParser._parse_node(node_data=child_data)
@@ -59,7 +71,7 @@ class MindMupParser:
 
     @staticmethod
     def to_mindmup_format(mindmap: MindMap) -> str:
-        """Convert Mindmup to JSON data."""
+        """將心智圖物件轉換為 MindMup 格式的 JSON 字串"""
         data = {
             "title": mindmap.title,
             "formatVersion": mindmap.version,
@@ -69,7 +81,7 @@ class MindMupParser:
 
     @staticmethod
     def _node_to_dict(node: MindMapNode) -> Dict[str, Any]:
-        """Node to dict."""
+        """將節點轉換為字典格式（遞迴處理）"""
         result = {
             "id": node.id,
             "title": node.title
@@ -91,7 +103,7 @@ class MindMupParser:
 
     @staticmethod
     def extract_text_content(mindmap: MindMap) -> List[str]:
-        """Extract all Mindmup content's text."""
+        """提取心智圖中所有節點的文字內容"""
         texts = []
 
         def extract_from_node(node: MindMapNode):
@@ -104,7 +116,7 @@ class MindMupParser:
 
     @staticmethod
     def get_node_count(mindmap: MindMap) -> int:
-        """Count the node numbers."""
+        """計算心智圖中的節點總數"""
         def count_nodes(node: MindMapNode) -> int:
             count = 1  # current node
             for child in node.children:
@@ -115,7 +127,7 @@ class MindMupParser:
 
     @staticmethod
     def search_content(mindmap: MindMap, keyword: str, case_sensitive: bool = False) -> List[Dict[str, Any]]:
-        """Search for keyword in mindmap content and return matching nodes with context."""
+        """在心智圖內容中搜尋關鍵字，返回匹配的節點及其上下文"""
         matches = []
         search_keyword = keyword if case_sensitive else keyword.lower()
 
@@ -144,9 +156,10 @@ class MindMupParser:
 
     @staticmethod
     def get_node_with_context(mindmap: MindMap, node_id: str, include_siblings: bool = False) -> Dict[str, Any]:
-        """Get specific node with its context (parent, children, siblings if requested)."""
+        """取得特定節點及其上下文（父節點、子節點、兄弟節點）"""
 
         def find_node_with_context(node: MindMapNode, parent: MindMapNode = None, siblings: List[MindMapNode] = None):
+            """遞迴搜尋指定節點並返回其上下文資訊"""
             if node.id == node_id:
                 result = {
                     "node": {

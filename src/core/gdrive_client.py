@@ -1,3 +1,6 @@
+# Google Drive 客戶端 - 負責與 Google Drive API 溝通
+# 提供身份驗證、檔案列表、下載等功能
+
 import asyncio
 import functools
 import os
@@ -18,17 +21,30 @@ logger = get_logger(__name__)
 
 
 class GoogleDriveClient:
+    """
+    Google Drive API 客戶端類別
+    負責處理與 Google Drive 的所有交互，包含：
+    1. 身份驗證（使用 Service Account）
+    2. 檔案列表和搜尋
+    3. 檔案內容下載
+    """
+
     def __init__(self):
-        self.service = None
-        self.credentials = None
-        self._executor = ThreadPoolExecutor(max_workers=5)
+        self.service = None  # Google Drive API 服務物件
+        self.credentials = None  # 身份驗證物件
+        self._executor = ThreadPoolExecutor(max_workers=5)  # 非同步作業線程池
 
     async def authenticate(self) -> OperationResult:
+        """
+        身份驗證方法 - 使用 Service Account 身份驗證
+        會嘗試多個預設位置的身份驗證檔案
+        """
         try:
             logger.info('Authenticating with Google Drive.')
+            # 從環境變數取得身份驗證檔案路徑
             creds_file = os.getenv('GOOGLE_DRIVE_CREDENTIALS_FILE')
 
-            # If no environment variable set, try default locations
+            # 如果環境變數未設定，嘗試預設位置
             if not creds_file:
                 default_paths = [
                     'deployment/credentials/google_service_account.json',
@@ -44,22 +60,22 @@ class GoogleDriveClient:
             if not creds_file or not Path(creds_file).exists():
                 return error_result(error=f'Credentials file not found: {creds_file}. Please set GOOGLE_DRIVE_CREDENTIALS_FILE environment variable or place the file at deployment/credentials/google_service_account.json')
 
-            # Default scopes for Google Drive
+            # Google Drive API 所需的權限範圍
             scopes = [
-                'https://www.googleapis.com/auth/drive',
-                'https://www.googleapis.com/auth/drive.file'
+                'https://www.googleapis.com/auth/drive',         # 完整 Drive 訪問權限
+                'https://www.googleapis.com/auth/drive.file'     # 檔案訪問權限
             ]
 
-            # Load credentials from JSON file
+            # 從 JSON 檔案載入身份驗證
             self.credentials = service_account.Credentials.from_service_account_file(
                 creds_file,
                 scopes=scopes
             )
 
-            # Build service
+            # 建立 Google Drive API 服務
             self.service = build('drive', 'v3', credentials=self.credentials)
 
-            # Test connection
+            # 測試連線
             await self._test_connection()
             return success_result('Authentication successful.')
         except Exception as e:
@@ -67,8 +83,9 @@ class GoogleDriveClient:
             return error_result(error=f'Error authenticating with Google Drive: {e}')
 
     async def _test_connection(self):
-        """Try to connect Google Drive."""
+        """測試 Google Drive 連線狀態"""
         try:
+            # 取得用戶資訊來驗證連線
             result = await self._run_sync(
                 lambda: self.service.about().get(fields='user, storageQuota').execute()
             )
@@ -79,14 +96,19 @@ class GoogleDriveClient:
 
     async def _run_sync(self, func, *args, **kwargs):
         """
-        Run a synchronous function in a separate thread to avoid blocking the asyncio event loop.
-        Uses functools.partial to handle keyword arguments correctly.
+        在獨立線程中執行同步函數，避免阻塞 asyncio 事件迴圈
+        使用 functools.partial 正確處理關鍵字參數
         """
         loop = asyncio.get_running_loop()
-        # Use functools.partial to wrap the function and its arguments
+        # 使用 functools.partial 封裝函數和其參數
         return await loop.run_in_executor(self._executor, functools.partial(func, *args, **kwargs))
 
     async def list_files(self, query: Optional[SearchQuery] = None) -> OperationResult:
+        """
+        列出 Google Drive 檔案
+        參數：
+            query: 搜尋查詢條件，可指定資料夾、檔案類型等
+        """
         try:
             if query is None:
                 query = SearchQuery()
@@ -119,21 +141,21 @@ class GoogleDriveClient:
             return error_result(error=f'Error of list files: {e}')
 
     async def download_file_content(self, file_id: str) -> OperationResult:
-        """Download file content from Google Drive."""
+        """從 Google Drive 下載檔案內容"""
         try:
             logger.info(f'Downloading file content: {file_id}')
 
-            # Get file metadata first
+            # 先取得檔案元數據
             file_metadata = await self._run_sync(
                 lambda: self.service.files().get(fileId=file_id, fields='id,name,mimeType,size').execute()
             )
 
-            # Download file content
+            # 下載檔案內容
             file_content = await self._run_sync(
                 lambda: self.service.files().get_media(fileId=file_id).execute()
             )
 
-            # Decode content based on mime type
+            # 根據 MIME 類型解碼內容
             if isinstance(file_content, bytes):
                 try:
                     content_str = file_content.decode('utf-8')

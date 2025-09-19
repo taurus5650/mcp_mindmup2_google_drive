@@ -1,3 +1,6 @@
+# MCP 伺服器 - 主要的 MCP (Model Context Protocol) 伺服器實現
+# 提供給 Claude 的工具集合，讓 Claude 能夠操作 Google Drive 中的 MindMup 檔案
+
 import asyncio
 import os
 from datetime import datetime
@@ -13,23 +16,40 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 class MCPServer:
-    # Claude content length limit (1MB)
+    """
+    MCP (Model Context Protocol) 伺服器主類別
+
+    這是整個系統的核心，負責：
+    1. 初始化和管理 Google Drive 客戶端和 MindMup 管理器
+    2. 提供給 Claude 的各種工具 (tools)
+    3. 處理 Claude 的請求並返回結果
+    4. 管理內容長度限制，避免超過 Claude 的處理能力
+    """
+
+    # Claude 內容長度限制 (1MB)
     CLAUDE_MAX_CONTENT_LENGTH = 1048576
 
     def __init__(self):
+        # 初始化 FastMCP 伺服器
         self.mcp = FastMCP(
             name='Mindmup2 Google Drive MCP',
             host='0.0.0.0',
             port=int(os.getenv('MCP_PORT', 9802))
         )
+        # 初始化為 None，在 initialize_clients() 中才會實際初始化
         self.gdrive_client = None
         self.mindmup_manager = None
+
+        # 設定工具和路由
         self._setup_tools()
         self._setup_sse_routes()
 
     async def list_gdrive_files_tool(
             self, max_results: int = 10, file_type: Optional[str] = None, name_contains: Optional[str] = None) -> Dict[str, Any]:
-        """List files from Google Drive with optional filtering."""
+        """
+        工具: 列出 Google Drive 檔案
+        提供給 Claude 的基本檔案列表功能，支持篩選
+        """
         if not self.gdrive_client:
             return {"error": "Google Drive client not initialized."}
 
@@ -51,7 +71,10 @@ class MCPServer:
 
     async def search_mindmaps_tool(
             self, folder_id: Optional[str] = None) -> Dict[str, Any]:
-        """Search for MindMup files in Google Drive."""
+        """
+        工具: 搜尋 MindMup 檔案
+        在 Google Drive 中搜尋所有 MindMup 心智圖檔案
+        """
         if not self.mindmup_manager:
             return {"error": "MindMup manager not initialized"}
 
@@ -83,7 +106,10 @@ class MCPServer:
             return {"error": str(e)}
 
     async def get_mindmap_content_tool(self, file_id: str) -> Dict[str, Any]:
-        """Load and parse a specific mindmap file."""
+        """
+        工具: 取得心智圖內容
+        載入並解析指定的心智圖檔案，返回完整的結構化內容
+        """
         if not self.mindmup_manager:
             return {"error": "MindMup manager not initialized"}
 
@@ -100,7 +126,7 @@ class MCPServer:
             all_text_list = mindmap.extract_text_content()
             all_text = ' '.join(all_text_list) if all_text_list else ''
 
-            # Handle large content that exceeds Claude's limit
+            # 處理超過 Claude 限制的大型內容
             all_text, content_truncated, original_length = self._handle_large_content(all_text, file_id)
 
             return_data = {
@@ -130,7 +156,10 @@ class MCPServer:
 
     async def search_and_parse_mindmaps_tool(
             self, folder_id: Optional[str] = None) -> Dict[str, Any]:
-        """Search for MindMup files and parse their content."""
+        """
+        工具: 搜尋並解析心智圖
+        組合搜尋和解析功能，一次取得多個心智圖的內容
+        """
         if not self.mindmup_manager:
             return {"error": "MindMup manager not initialized"}
 
@@ -324,7 +353,7 @@ class MCPServer:
             return {"error": str(e)}
 
     def _extract_node_info(self, node):
-        """Extract node information recursively."""
+        """遞迴提取節點資訊，建立完整的節點樹狀結構"""
         node_info = {
             "id": node.id,
             "title": node.title,
@@ -343,10 +372,15 @@ class MCPServer:
         return node_info
 
     def _handle_large_content(self, content: str, file_id: str = None) -> tuple[str, bool, int]:
-        """Handle large content that may exceed Claude's processing limit.
+        """
+        處理可能超過 Claude 處理限制的大型內容
 
-        Returns:
-            tuple: (truncated_content, was_truncated, original_length)
+        參數:
+            content: 原始內容
+            file_id: 檔案ID（用於日誌記錄）
+
+        返回:
+            tuple: (截斷後的內容, 是否被截斷, 原始長度)
         """
         original_length = len(content)
         content_truncated = False
@@ -360,7 +394,7 @@ class MCPServer:
         return content, content_truncated, original_length
 
     def _setup_tools(self):
-        """Register all MCP tools."""
+        """註冊所有 MCP 工具 - 這些工具會暴露給 Claude 使用"""
         self.mcp.tool()(self.list_gdrive_files_tool)
         self.mcp.tool()(self.search_mindmaps_tool)
         self.mcp.tool()(self.get_mindmap_content_tool)
@@ -372,7 +406,7 @@ class MCPServer:
         self.mcp.tool()(self.get_chunked_mindmap_content_tool)
 
     def _setup_sse_routes(self):
-        """Setup SSE-specific routes for keep-alive."""
+        """設定 SSE 特定路由，用於保持連線狀態"""
 
         @self.mcp.custom_route('/ping', methods=['GET'])
         async def ping_endpoint(request):
@@ -393,8 +427,12 @@ class MCPServer:
             })
 
     async def initialize_clients(self):
-        """Initialize Google Drive and MindMup clients."""
+        """
+        初始化 Google Drive 客戶端和 MindMup 管理器
+        這是伺服器啟動時的關鍵步驟
+        """
         try:
+            # 初始化 Google Drive 客戶端
             self.gdrive_client = GoogleDriveClient()
             auth_result = await self.gdrive_client.authenticate()
 
@@ -403,6 +441,7 @@ class MCPServer:
                     f'Failed to authenticate with Google Drive: {auth_result.error}')
                 return False
 
+            # 初始化 MindMup 管理器（依賴 Google Drive 客戶端）
             self.mindmup_manager = MindMupManager(self.gdrive_client)
             logger.info('Clients initialized successfully')
             return True
@@ -411,8 +450,12 @@ class MCPServer:
             return False
 
     def start(self, mode: str = 'stdio'):
-        """Start the MCP server."""
-        # Initialize clients
+        """
+        啟動 MCP 伺服器
+        參數:
+            mode: 運行模式 ('stdio' 或 'http')
+        """
+        # 初始化客戶端
         success = asyncio.run(self.initialize_clients())
         if not success:
             logger.error('Failed to initialize clients. Exiting.')
@@ -420,14 +463,14 @@ class MCPServer:
 
         logger.info('Clients ready. Starting FastMCP server')
 
-        # Start server
+        # 啟動伺服器
         if mode == 'http':
             logger.info('Starting FastMCP server in SSE mode')
-            self.mcp.run(transport='sse')
+            self.mcp.run(transport='sse')  # Server-Sent Events 模式
         else:
             logger.info('Starting FastMCP server in stdio mode')
-            self.mcp.run()
+            self.mcp.run()  # 標準輸入輸出模式
 
 
-# Create a singleton instance
+# 建立單例實例 - 這個實例會在 run.py 中被使用
 mcp_server = MCPServer()
