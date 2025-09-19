@@ -4,9 +4,10 @@
 import asyncio
 import functools
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -34,6 +35,11 @@ class GoogleDriveClient:
         self.service = None  # Google Drive API 服務物件
         self.credentials = None  # 身份驗證物件
         self._executor = ThreadPoolExecutor(max_workers=5)  # 非同步作業線程池
+
+        # 簡單的記憶體快取 - {file_id: (content, timestamp)}
+        self._file_cache: Dict[str, Tuple[str, float]] = {}
+        self._cache_ttl = 300  # 快取 5 分鐘
+        self._max_cache_size = 50  # 最多快取 50 個檔案
 
     async def authenticate(self) -> OperationResult:
         """
@@ -142,8 +148,18 @@ class GoogleDriveClient:
             return OperationResult.fail(f'Error of list files: {e}')
 
     async def download_file_content(self, file_id: str) -> OperationResult:
-        """從 Google Drive 下載檔案內容"""
+        """從 Google Drive 下載檔案內容（帶快取）"""
         try:
+            # 檢查快取
+            if file_id in self._file_cache:
+                cached_content, cached_time = self._file_cache[file_id]
+                if time.time() - cached_time < self._cache_ttl:
+                    logger.info(f'Using cached content for file: {file_id}')
+                    return OperationResult.ok(cached_content)
+                else:
+                    # 快取過期，移除舊快取
+                    del self._file_cache[file_id]
+
             logger.info(f'Downloading file content: {file_id}')
 
             # 先取得檔案元數據
@@ -175,17 +191,57 @@ class GoogleDriveClient:
 
             logger.info(f'Successfully downloaded file: {file_metadata.get("name")} ({len(content_str)} characters)')
 
-            return OperationResult.ok({
+            # 建立返回資料
+            result_data = {
                 "file_id": file_id,
                 "name": file_metadata.get('name'),
                 "mime_type": file_metadata.get('mimeType'),
                 "size": file_metadata.get('size'),
                 "content": content_str
-            })
+            }
+
+            # 將結果加入快取（只快取內容部分）
+            self._file_cache[file_id] = (result_data, time.time())
+            logger.debug(f'Cached file content for: {file_id}')
+
+            # 清理過期和過多的快取
+            self._cleanup_cache()
+
+            return OperationResult.ok(result_data)
 
         except Exception as e:
             logger.error(f'Error downloading file {file_id}: {e}')
             return OperationResult.fail(f'Error downloading file {file_id}: {e}')
+
+    def _cleanup_cache(self):
+        """清理過期和過多的快取項目"""
+        current_time = time.time()
+
+        # 移除過期的快取項目
+        expired_keys = [
+            file_id for file_id, (_, timestamp) in self._file_cache.items()
+            if current_time - timestamp > self._cache_ttl
+        ]
+        for key in expired_keys:
+            del self._file_cache[key]
+            logger.debug(f'Removed expired cache for: {key}')
+
+        # 如果快取項目太多，移除最舊的
+        if len(self._file_cache) > self._max_cache_size:
+            # 按時間戳排序，移除最舊的項目
+            sorted_items = sorted(
+                self._file_cache.items(),
+                key=lambda x: x[1][1]  # 按時間戳排序
+            )
+
+            items_to_remove = len(self._file_cache) - self._max_cache_size
+            for i in range(items_to_remove):
+                file_id = sorted_items[i][0]
+                del self._file_cache[file_id]
+                logger.debug(f'Removed old cache for: {file_id}')
+
+        if expired_keys or len(self._file_cache) != len(self._file_cache):
+            logger.info(f'Cache cleanup: {len(self._file_cache)} items remaining')
 
     async def search_mindmup_files(self, folder_id: Optional[str] = None) -> List:
         """
