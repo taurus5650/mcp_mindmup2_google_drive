@@ -119,7 +119,7 @@ class SearchQuery:
 
         if self.mime_types:
             mime_conditions = [f'mimeType="{mt.value if hasattr(mt, "value") else str(mt)}"' for mt in self.mime_types]
-            conditions.append(f'({' or '.join(mime_conditions)})')
+            conditions.append(f"({' or '.join(mime_conditions)})")
 
         return ' and '.join(conditions) if conditions else ''
 

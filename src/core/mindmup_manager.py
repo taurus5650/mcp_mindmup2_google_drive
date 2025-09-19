@@ -10,12 +10,14 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+
 class MindMupManager:
     def __init__(self, gdrive_client: GoogleDriveClient):
         self.client = gdrive_client
         self.parser = MindMupParser()
 
-    async def search_mindmup_files(self, folder_id: Optional[str] = None) -> List[FileInfo]:
+    async def search_mindmup_files(
+            self, folder_id: Optional[str] = None) -> List[FileInfo]:
         """Search all Mindmup file, inlcluding sub folder."""
 
         all_mindmup_files = []
@@ -32,7 +34,8 @@ class MindMupManager:
         logger.info(f'search_mindmup_files: {all_mindmup_files}')
         return all_mindmup_files
 
-    async def _search_folder_for_mindmup(self, folder_id: str) -> List[FileInfo]:
+    async def _search_folder_for_mindmup(
+            self, folder_id: str) -> List[FileInfo]:
         """Search Mindmup files in a folder."""
         mindmup_files = []
 
@@ -43,7 +46,8 @@ class MindMupManager:
         result = await self.client.list_files(query=query)
 
         if not result.success:
-            logger.error(f'_search_folder_for_mindmup error: {folder_id}: {result.error}')
+            logger.error(
+                f'_search_folder_for_mindmup error: {folder_id}: {result.error}')
             return mindmup_files
 
         files = result.data.get('files', [])
@@ -51,12 +55,13 @@ class MindMupManager:
         for file_info in files:
             if file_info.is_mindmup():
                 mindmup_files.append(file_info)
+                logger.info(f'_search_folder_for_mindmup: found mindmup file {file_info.name}')
             elif file_info.is_folder():
                 # subfolder
                 subfolder_files = await self._search_folder_for_mindmup(file_info.id)
                 mindmup_files.extend(subfolder_files)
 
-        logger.info(f'_search_folder_for_mindmup: {file_info}')
+        logger.info(f'_search_folder_for_mindmup: total found {len(mindmup_files)} mindmup files')
         return mindmup_files
 
     async def _search_all_drive_for_mindmup(self) -> List[FileInfo]:
@@ -93,9 +98,11 @@ class MindMupManager:
 
             file_content = download_result.data.get('content')
             if not file_content:
-                return OperationResult.fail('No content found in downloaded file')
+                return OperationResult.fail(
+                    'No content found in downloaded file')
 
-            logger.info(f'load_mindmup success: {download_result.data.get("name")}')
+            logger.info(
+                f'load_mindmup success: {download_result.data.get("name")}')
             return OperationResult.ok(file_content)
 
         except Exception as e:
@@ -112,7 +119,8 @@ class MindMupManager:
             logger.error(f'parse_mindmup_file error: {e}')
             return OperationResult.fail(f'parse_mindmup_file error: {e}')
 
-    async def search_and_parse_mindmups(self, folder_id: Optional[str] = None) -> List[MindMapSearchResult]:
+    async def search_and_parse_mindmups(
+            self, folder_id: Optional[str] = None) -> List[MindMapSearchResult]:
         """Search and parse MindMup files."""
         search_results = []
         mindmup_files = await self.search_mindmup_files(folder_id=folder_id)

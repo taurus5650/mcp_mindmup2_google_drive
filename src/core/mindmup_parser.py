@@ -6,7 +6,6 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-
 class MindMupParser:
 
     @staticmethod
@@ -113,3 +112,72 @@ class MindMupParser:
             return count
 
         return count_nodes(node=mindmap.root_node)
+
+    @staticmethod
+    def search_content(mindmap: MindMap, keyword: str, case_sensitive: bool = False) -> List[Dict[str, Any]]:
+        """Search for keyword in mindmap content and return matching nodes with context."""
+        matches = []
+        search_keyword = keyword if case_sensitive else keyword.lower()
+
+        def search_in_node(node: MindMapNode, path: List[str] = None):
+            if path is None:
+                path = []
+
+            current_path = path + [node.title]
+            search_text = node.title if case_sensitive else node.title.lower()
+
+            if search_keyword in search_text:
+                matches.append({
+                    "node_id": node.id,
+                    "title": node.title,
+                    "path": " > ".join(current_path),
+                    "depth": len(current_path) - 1,
+                    "attributes": node.attributes if node.attributes else {},
+                    "children_count": len(node.children)
+                })
+
+            for child in node.children:
+                search_in_node(child, current_path)
+
+        search_in_node(mindmap.root_node)
+        return matches
+
+    @staticmethod
+    def get_node_with_context(mindmap: MindMap, node_id: str, include_siblings: bool = False) -> Dict[str, Any]:
+        """Get specific node with its context (parent, children, siblings if requested)."""
+
+        def find_node_with_context(node: MindMapNode, parent: MindMapNode = None, siblings: List[MindMapNode] = None):
+            if node.id == node_id:
+                result = {
+                    "node": {
+                        "id": node.id,
+                        "title": node.title,
+                        "attributes": node.attributes if node.attributes else {},
+                        "position": node.position
+                    },
+                    "children": [
+                        {"id": child.id, "title": child.title}
+                        for child in node.children
+                    ],
+                    "parent": {
+                        "id": parent.id,
+                        "title": parent.title
+                    } if parent else None
+                }
+
+                if include_siblings and siblings:
+                    result["siblings"] = [
+                        {"id": sibling.id, "title": sibling.title}
+                        for sibling in siblings if sibling.id != node_id
+                    ]
+
+                return result
+
+            for child in node.children:
+                result = find_node_with_context(child, node, node.children)
+                if result:
+                    return result
+
+            return None
+
+        return find_node_with_context(mindmap.root_node)

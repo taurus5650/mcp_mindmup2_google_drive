@@ -27,8 +27,22 @@ class GoogleDriveClient:
         try:
             logger.info('Authenticating with Google Drive.')
             creds_file = os.getenv('GOOGLE_DRIVE_CREDENTIALS_FILE')
+
+            # If no environment variable set, try default locations
+            if not creds_file:
+                default_paths = [
+                    'deployment/credentials/google_service_account.json',
+                    'credentials/google_service_account.json',
+                    'google_service_account.json'
+                ]
+                for path in default_paths:
+                    if Path(path).exists():
+                        creds_file = path
+                        logger.info(f'Using credentials file from default location: {creds_file}')
+                        break
+
             if not creds_file or not Path(creds_file).exists():
-                return error_result(error=f'Credentials file not found: {creds_file}')
+                return error_result(error=f'Credentials file not found: {creds_file}. Please set GOOGLE_DRIVE_CREDENTIALS_FILE environment variable or place the file at deployment/credentials/google_service_account.json')
 
             # Default scopes for Google Drive
             scopes = [
