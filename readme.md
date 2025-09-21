@@ -95,3 +95,7 @@ Add this server to your MCP client configuration:
 
 ## Contribution
 
+This project is a collaborative effort:
+- 50% developed by the project maintainer
+- 50% generated with assistance from Claude AI
+
