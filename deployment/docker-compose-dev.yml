@@ -8,11 +8,11 @@ services:
       dockerfile: deployment/Dockerfile
     container_name: mcp_mindmup_container
     environment:
-      - GOOGLE_DRIVE_CREDENTIALS_FILE=/app/credentials/google_service_account.json
-      - MCP_MODE=http
+      - GOOGLE_DRIVE_CREDENTIAL_FILE=/app/deployment/credential/google_service_account.json
+      - MCP_TRANSPORT=sse
     ports:
       - '9802:9802'
     volumes:
       - ..:/app
-      - ./credentials:/app/credentials
+      - ./credential:/app/deployment/credential
     command: ['python3','run.py']

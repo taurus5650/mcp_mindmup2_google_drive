@@ -92,3 +92,6 @@ Add this server to your MCP client configuration:
 - **Sync Operations**: Two-way synchronization between local and cloud mind maps
 - **Advanced Tagging**: Add metadata and tags to mind map nodes
 - **Plugin System**: Extensible plugin architecture for custom functionality
+
+## Contribution
+

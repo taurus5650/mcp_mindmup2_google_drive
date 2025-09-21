@@ -1,433 +1,536 @@
-import asyncio
-import os
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from mcp.server.fastmcp import FastMCP
+from src.model.gdrive_model import SearchQuery
+from src.utility.logger import get_logger
+from starlette.responses import JSONResponse
 
 from src.core.gdrive_client import GoogleDriveClient
-from src.core.mindmup_manager import MindMupManager
-from src.models.file_models import SearchQuery
-from src.utils.logger import get_logger
+from src.core.gdrive_feature import GoogleDriveFeature
+from src.core.mindmup_parser import MindmupParser
 
 logger = get_logger(__name__)
 
-class MCPServer:
-    # Claude content length limit (1MB)
-    CLAUDE_MAX_CONTENT_LENGTH = 1048576
 
-    def __init__(self):
+class MCPServer:
+
+    def __init__(self, name: str, host: str, port: int):
         self.mcp = FastMCP(
-            name='Mindmup2 Google Drive MCP',
-            host='0.0.0.0',
-            port=int(os.getenv('MCP_PORT', 9802))
+            name=name,
+            host=host,
+            port=int(port)
         )
         self.gdrive_client = None
-        self.mindmup_manager = None
-        self._setup_tools()
-        self._setup_sse_routes()
+        self.gdrive_feature = None
+        self._setup_tool()
+        self._setup_sse_route()
 
-    async def list_gdrive_files_tool(
-            self, max_results: int = 10, file_type: Optional[str] = None, name_contains: Optional[str] = None) -> Dict[str, Any]:
-        """List files from Google Drive with optional filtering."""
-        if not self.gdrive_client:
-            return {"error": "Google Drive client not initialized."}
+    def _check_gdrive_initialized(self):
+        if not self.gdrive_feature:
+            raise ValueError("Google Drive not initialized.")
+
+    async def _find_file_by_name(self, file_name: str) -> Optional[str]:
+        """Find file ID by name. Returns None if not found."""
+        mindmup_file = await self.gdrive_feature.search_mindmup_file(name_contain=file_name)
+        if not mindmup_file:
+            return None
+
+        file_id = mindmup_file[0].id
+        logger.info(f'Found file {mindmup_file[0].name} with ID {file_id}')
+        return file_id
+
+    async def _download_and_parse_mindmup(self, file_id: str) -> Tuple[Optional[Any], Optional[str], Dict[str, Any]]:
+        """Download and parse mindmup file. Returns (mindmup, file_content, error_dict)."""
+        # Download file
+        download_result = await self.gdrive_feature.download_file_content(file_id=file_id)
+        if not download_result.is_success:
+            return None, None, {"error": download_result.detail}
+
+        file_content = download_result.detail.get('content_str')
+        if not file_content:
+            return None, None, {"error": "No content in downloaded file."}
+
+        # Parse mindmup
+        try:
+            mindmup = MindmupParser.parse_content(content=file_content)
+            return mindmup, file_content, {}
+        except Exception as e:
+            return None, None, {"error": f"Parse error: {e}"}
+
+    async def _process_mindmup_content(self, file_id: str, file_content: str) -> Dict[str, Any]:
+        """Process mindmup content with size handling."""
+        try:
+            mindmup = MindmupParser.parse_content(content=file_content)
+        except Exception as e:
+            return {"error": f"Mindmup parse error: {e}"}
+
+        # Process content
+        all_text_list = mindmup.extract_text_content()
+        all_text = ' '.join(all_text_list) if all_text_list else ''
+        original_content_length = len(all_text)
+
+        # For very large content (>800KB text), always use chunked approach
+        # This handles files that are 20MB+ as mentioned by user
+        if original_content_length > 800 * 1024:
+            logger.info(f'Using chunked extraction for large content {file_id}: {original_content_length} characters')
+
+            # Split content into chunk
+            chunk_list = MindmupParser.split_content_to_chunk(all_text)
+
+            # Also get structured overview
+            structured_data = MindmupParser.extract_mindmap_structure(mindmup)
+
+            # Create chunk metadata without actual content to avoid size limit
+            chunk_metadata = []
+            for chunk in chunk_list:
+                chunk_metadata.append({
+                    "chunk_index": chunk["chunk_index"],
+                    "total_chunk": chunk["total_chunk"],
+                    "start_pos": chunk["start_pos"],
+                    "end_pos": chunk["end_pos"],
+                    "size": len(chunk["content"])
+                })
+
+            return {
+                "title": mindmup.title,
+                "id": mindmup.id,
+                "format_version": mindmup.format_version,
+                "node_count": mindmup.get_node_count(),
+                "content_type": "chunked",
+                "total_chunk": len(chunk_list),
+                "chunk_metadata": chunk_metadata,
+                "structured_overview": structured_data,
+                "original_content_length": original_content_length,
+                "metadata": {
+                    "created_time": mindmup.created_time.isoformat() if mindmup.created_time else None,
+                    "modified_time": mindmup.modified_time.isoformat() if mindmup.modified_time else None,
+                    "author": mindmup.author
+                }
+            }
+        # For medium content (800KB - 1MB), use structured extraction
+        elif original_content_length > MindmupParser.CLAUDE_MAX_CONTENT_LENGTH:
+            logger.info(f'Using structured extraction for medium content {file_id}: {original_content_length} characters')
+            structured_data = MindmupParser.extract_mindmap_structure(mindmup)
+
+            return {
+                "title": mindmup.title,
+                "id": mindmup.id,
+                "format_version": mindmup.format_version,
+                "node_count": mindmup.get_node_count(),
+                "structured_content": structured_data,
+                "content_type": "structured",
+                "original_content_length": original_content_length,
+                "metadata": {
+                    "created_time": mindmup.created_time.isoformat() if mindmup.created_time else None,
+                    "modified_time": mindmup.modified_time.isoformat() if mindmup.modified_time else None,
+                    "author": mindmup.author
+                }
+            }
+        else:
+            # For small content (<800KB), return full content
+            return {
+                "title": mindmup.title,
+                "id": mindmup.id,
+                "format_version": mindmup.format_version,
+                "node_count": mindmup.get_node_count(),
+                "root_node": mindmup.root_node.to_dict(),
+                "all_text_content": all_text,
+                "content_type": "full",
+                "original_content_length": original_content_length,
+                "metadata": {
+                    "created_time": mindmup.created_time.isoformat() if mindmup.created_time else None,
+                    "modified_time": mindmup.modified_time.isoformat() if mindmup.modified_time else None,
+                    "author": mindmup.author
+                }
+            }
+
+    async def gdrive_tool_list_file(
+            self, max_result: int = 1000, file_type: Optional[str] = None,
+            name_contain: Optional[str] = None) -> Dict[str, Any]:
+        """List out Gdrive file list."""
+
+        try:
+            self._check_gdrive_initialized()
+        except ValueError as e:
+            return {"error": str(e)}
 
         try:
             query = SearchQuery(
-                max_results=max_results,
-                mime_types=[file_type] if file_type else [],
-                query=name_contains
+                max_result=max_result,
+                mime_type=[file_type] if file_type else [],
+                query=name_contain
             )
-            result = await self.gdrive_client.list_files(query=query)
+            result = await self.gdrive_feature.list_file(query=query)
 
-            if result.success:
-                return result.data
-            else:
-                return {"error": result.error}
+            if not result.is_success:
+                return {"error": result.detail}
+
+            return result.detail
+
         except Exception as e:
-            logger.error(f'list_gdrive_files error: {e}')
-            return {"error": str(e)}
+            error_message = f'gdrive_tool_list_file error: {e}'
+            logger.error(error_message)
+            return {"error": error_message}
 
-    async def search_mindmaps_tool(
-            self, folder_id: Optional[str] = None) -> Dict[str, Any]:
-        """Search for MindMup files in Google Drive."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+    async def get_single_mindmup_tool(
+            self, file_id: Optional[str] = None, file_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get single mindmup content - Using file id or file name.
+
+        Args:
+            file_id: Direct file ID to download.
+            file_name: File name to search for (will use the first match).
+        """
 
         try:
-            files = await self.mindmup_manager.search_mindmup_files(folder_id=folder_id)
-            files_data = []
-            for file_info in files:
-                files_data.append({
-                    "id": file_info.id,
-                    "name": file_info.name,
-                    "mime_type": file_info.mime_type,
-                    "size": file_info.size,
-                    "modified_time": file_info.modified_time.isoformat() if file_info.modified_time else None,
-                    "created_time": file_info.created_time.isoformat() if file_info.created_time else None,
-                    "web_view_link": file_info.web_view_link,
-                    "starred": file_info.starred,
-                    "shared": file_info.shared,
-                    "owned_by_me": file_info.owned_by_me
-                })
-            logger.info(f'search_mindmaps_tool: {files_data}')
+            self._check_gdrive_initialized()
+        except ValueError as e:
+            return {"error": str(e)}
+
+        if not file_id and not file_name:
+            return {"error": "Either file_id or file_name must be provided."}
+
+        try:
+            # If file_name is provided, search for the file first
+            if file_name and not file_id:
+                file_id = await self._find_file_by_name(file_name)
+                if not file_id:
+                    return {"error": f"No MindMup file found with name containing '{file_name}'."}
+
+            # Check file metadata first
+            file_metadata = await self.gdrive_feature.get_file_metadata(file_id)
+            file_size = 0
+            if file_metadata and 'size' in file_metadata:
+                file_size = int(file_metadata.get('size', 0))
+                logger.info(f'File {file_id} size: {file_size} bytes ({round(file_size / (1024 * 1024), 2)} MB)')
+
+            # Download and parse
+            mindmup, file_content, error = await self._download_and_parse_mindmup(file_id)
+            if error:
+                return error
+
+            # Process mindmup content
+            mindmap_data = await self._process_mindmup_content(file_id, file_content)
+            if "error" in mindmap_data:
+                return mindmap_data
+
+            # Add file size info if available
+            if file_size > 0:
+                mindmap_data["file_size_mb"] = round(file_size / (1024 * 1024), 2)
+
+            # If content is chunked, provide guidance
+            if mindmap_data.get("content_type") == "chunked":
+                return {
+                    "mindmap": mindmap_data,
+                    "file_id": file_id,
+                    "usage_guide": {
+                        "message": f"Content is split into {mindmap_data['total_chunk']} chunk due to size.",
+                        "next_step": "Use get_mindmup_chunk_tool to retrieve specific chunk",
+                        "example": f"get_mindmup_chunk_tool(file_id='{file_id}', chunk_index=0)"
+                    }
+                }
 
             return {
-                "files": files_data,
-                "count": len(files_data)
-            }
-
-        except Exception as e:
-            logger.error(f'search_mindmaps_tool error: {e}')
-            return {"error": str(e)}
-
-    async def get_mindmap_content_tool(self, file_id: str) -> Dict[str, Any]:
-        """Load and parse a specific mindmap file."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
-
-        try:
-            load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
-            if not load_result.success:
-                return {"error": f"Failed to load file: {load_result.error}"}
-
-            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
-            if not parse_result.success:
-                return {"error": f"Failed to parse mindmap: {parse_result.error}"}
-
-            mindmap = parse_result.data
-            all_text_list = mindmap.extract_text_content()
-            all_text = ' '.join(all_text_list) if all_text_list else ''
-
-            # Handle large content that exceeds Claude's limit
-            all_text, content_truncated, original_length = self._handle_large_content(all_text, file_id)
-
-            return_data = {
-                "mindmap": {
-                    "title": mindmap.title,
-                    "id": mindmap.id,
-                    "format_version": mindmap.format_version,
-                    "node_count": mindmap.get_node_count(),
-                    "root_node": self._extract_node_info(mindmap.root_node),
-                    "all_text_content": all_text,
-                    "content_truncated": content_truncated,
-                    "original_content_length": original_length,
-                    "metadata": {
-                        "created_time": mindmap.created_time.isoformat() if mindmap.created_time else None,
-                        "modified_time": mindmap.modified_time.isoformat() if mindmap.modified_time else None,
-                        "author": mindmap.author
-                    }
-                },
+                "mindmap": mindmap_data,
                 "file_id": file_id
             }
-            logger.info(f'get_mindmap_content_tool: {return_data}')
-            return return_data
 
         except Exception as e:
-            logger.error(f'get_mindmap_content error: {e}')
-            return {"error": str(e)}
+            error_message = f'get_single_mindmup_tool error: {e}'
+            logger.error(error_message)
+            return {"error": error_message}
 
-    async def search_and_parse_mindmaps_tool(
-            self, folder_id: Optional[str] = None) -> Dict[str, Any]:
-        """Search for MindMup files and parse their content."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
+    async def analyze_mindmup_summary_tool(
+            self, file_name: Optional[str] = None, file_id: Optional[str] = None) -> Dict[str, Any]:
+        """Analyze and provide summary for large mindmup file.
 
-        try:
-            search_results = await self.mindmup_manager.search_and_parse_mindmups(folder_id=folder_id)
-
-            results_data = []
-
-            for result in search_results:
-                all_text_list = result.mindmap.extract_text_content()
-                all_text = " ".join(all_text_list) if all_text_list else ""
-
-                # Handle large content that exceeds Claude's limit
-                all_text, content_truncated, original_length = self._handle_large_content(all_text, result.file_id)
-
-                results_data.append({
-                    "file_id": result.file_id,
-                    "file_name": result.file_name,
-                    "file_url": result.file_url,
-                    "last_modified": result.last_modified.isoformat() if result.last_modified else None,
-                    "mindmap": {
-                        "title": result.mindmap.title,
-                        "id": result.mindmap.id,
-                        "format_version": result.mindmap.format_version,
-                        "node_count": result.mindmap.get_node_count(),
-                        "all_text_content": all_text,
-                        "content_truncated": content_truncated,
-                        "original_content_length": original_length,
-                        "preview": all_text[:500] + "..." if len(all_text) > 500 else all_text
-                    }
-                })
-            logger.info(f'search_and_parse_mindmaps_tool: {results_data}')
-            return {
-                "results": results_data,
-                "count": len(results_data)
-            }
-
-        except Exception as e:
-            logger.error(f'search_and_parse_mindmaps error: {e}')
-            return {"error": str(e)}
-
-    async def list_accessible_folders_tool(self) -> Dict[str, Any]:
-        """List all accessible folders in Google Drive."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
-
-        try:
-            folders = await self.mindmup_manager.list_accessible_folders()
-
-            folders_data = []
-            for folder in folders:
-                folders_data.append({
-                    "id": folder.id,
-                    "name": folder.name,
-                    "modified_time": folder.modified_time.isoformat() if folder.modified_time else None,
-                    "web_view_link": folder.web_view_link,
-                    "starred": folder.starred,
-                    "shared": folder.shared,
-                    "owned_by_me": folder.owned_by_me
-                })
-            logger.info(f'list_accessible_folders_tool: {folders_data}')
-            return {
-                "folders": folders_data,
-                "count": len(folders_data)
-            }
-
-        except Exception as e:
-            logger.error(f'list_accessible_folders error: {e}')
-            return {"error": str(e)}
-
-    async def search_mindmap_content_tool(self, file_id: str, keyword: str, case_sensitive: bool = False) -> Dict[str, Any]:
-        """Search for specific content within a mindmap file."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
-
-        try:
-            # Load and parse the mindmap
-            load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
-            if not load_result.success:
-                return {"error": f"Failed to load file: {load_result.error}"}
-
-            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
-            if not parse_result.success:
-                return {"error": f"Failed to parse mindmap: {parse_result.error}"}
-
-            mindmap = parse_result.data
-
-            # Search for content
-            from src.core.mindmup_parser import MindMupParser
-            matches = MindMupParser.search_content(mindmap, keyword, case_sensitive)
-
-            logger.info(f'search_mindmap_content_tool: found {len(matches)} matches for "{keyword}" in {file_id}')
-
-            return {
-                "file_id": file_id,
-                "keyword": keyword,
-                "case_sensitive": case_sensitive,
-                "matches": matches,
-                "total_matches": len(matches),
-                "mindmap_title": mindmap.title
-            }
-
-        except Exception as e:
-            logger.error(f'search_mindmap_content error: {e}')
-            return {"error": str(e)}
-
-    async def get_mindmap_node_tool(self, file_id: str, node_id: str, include_siblings: bool = False) -> Dict[str, Any]:
-        """Get specific node with context from a mindmap file."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
-
-        try:
-            # Load and parse the mindmap
-            load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
-            if not load_result.success:
-                return {"error": f"Failed to load file: {load_result.error}"}
-
-            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
-            if not parse_result.success:
-                return {"error": f"Failed to parse mindmap: {parse_result.error}"}
-
-            mindmap = parse_result.data
-
-            # Get node with context
-            from src.core.mindmup_parser import MindMupParser
-            node_context = MindMupParser.get_node_with_context(mindmap, node_id, include_siblings)
-
-            if not node_context:
-                return {"error": f"Node with ID '{node_id}' not found in mindmap"}
-
-            logger.info(f'get_mindmap_node_tool: retrieved node {node_id} from {file_id}')
-
-            return {
-                "file_id": file_id,
-                "mindmap_title": mindmap.title,
-                **node_context
-            }
-
-        except Exception as e:
-            logger.error(f'get_mindmap_node error: {e}')
-            return {"error": str(e)}
-
-    async def get_chunked_mindmap_content_tool(self, file_id: str, chunk_size: int = 50) -> Dict[str, Any]:
-        """Get mindmap content in chunks to handle large files."""
-        if not self.mindmup_manager:
-            return {"error": "MindMup manager not initialized"}
-
-        try:
-            # Load and parse the mindmap
-            load_result = await self.mindmup_manager.load_mindmup(file_id=file_id)
-            if not load_result.success:
-                return {"error": f"Failed to load file: {load_result.error}"}
-
-            parse_result = await self.mindmup_manager.parse_mindmup_file(file_content=load_result.data)
-            if not parse_result.success:
-                return {"error": f"Failed to parse mindmap: {parse_result.error}"}
-
-            mindmap = parse_result.data
-
-            # Extract all text content
-            all_text_list = mindmap.extract_text_content()
-            total_nodes = len(all_text_list)
-
-            # Create chunks
-            chunks = []
-            for i in range(0, total_nodes, chunk_size):
-                chunk_texts = all_text_list[i:i + chunk_size]
-                chunk_content = ' '.join(chunk_texts)
-                chunks.append({
-                    "chunk_id": i // chunk_size,
-                    "start_node": i,
-                    "end_node": min(i + chunk_size - 1, total_nodes - 1),
-                    "node_count": len(chunk_texts),
-                    "content": chunk_content,
-                    "content_length": len(chunk_content)
-                })
-
-            logger.info(f'get_chunked_mindmap_content_tool: created {len(chunks)} chunks for {file_id}')
-
-            return {
-                "file_id": file_id,
-                "mindmap_title": mindmap.title,
-                "total_nodes": total_nodes,
-                "chunk_size": chunk_size,
-                "total_chunks": len(chunks),
-                "chunks": chunks
-            }
-
-        except Exception as e:
-            logger.error(f'get_chunked_mindmap_content error: {e}')
-            return {"error": str(e)}
-
-    def _extract_node_info(self, node):
-        """Extract node information recursively."""
-        node_info = {
-            "id": node.id,
-            "title": node.title,
-            "children": []
-        }
-
-        if hasattr(node, 'attributes') and node.attributes:
-            node_info["attributes"] = node.attributes
-
-        if hasattr(node, 'position') and node.position:
-            node_info["position"] = node.position
-
-        for child in node.children:
-            node_info["children"].append(self._extract_node_info(child))
-
-        return node_info
-
-    def _handle_large_content(self, content: str, file_id: str = None) -> tuple[str, bool, int]:
-        """Handle large content that may exceed Claude's processing limit.
-
-        Returns:
-            tuple: (truncated_content, was_truncated, original_length)
+        Args:
+            file_name: File name to search for.
+            file_id: Direct file ID.
         """
-        original_length = len(content)
-        content_truncated = False
 
-        if original_length > self.CLAUDE_MAX_CONTENT_LENGTH:
-            content = content[:self.CLAUDE_MAX_CONTENT_LENGTH]
-            content_truncated = True
-            file_info = f" for file {file_id}" if file_id else ""
-            logger.info(f'Content truncated{file_info}. Original length: {original_length}, truncated to: {self.CLAUDE_MAX_CONTENT_LENGTH}')
+        try:
+            self._check_gdrive_initialized()
+        except ValueError as e:
+            return {"error": str(e)}
 
-        return content, content_truncated, original_length
+        if not file_id and not file_name:
+            return {"error": "Either file_id or file_name must be provided."}
 
-    def _setup_tools(self):
-        """Register all MCP tools."""
-        self.mcp.tool()(self.list_gdrive_files_tool)
-        self.mcp.tool()(self.search_mindmaps_tool)
-        self.mcp.tool()(self.get_mindmap_content_tool)
-        self.mcp.tool()(self.search_and_parse_mindmaps_tool)
-        self.mcp.tool()(self.list_accessible_folders_tool)
-        # New tools for handling large content
-        self.mcp.tool()(self.search_mindmap_content_tool)
-        self.mcp.tool()(self.get_mindmap_node_tool)
-        self.mcp.tool()(self.get_chunked_mindmap_content_tool)
+        try:
+            # Find file if needed
+            if file_name and not file_id:
+                file_id = await self._find_file_by_name(file_name)
+                if not file_id:
+                    return {"error": f"No MindMup file found with name '{file_name}'."}
 
-    def _setup_sse_routes(self):
-        """Setup SSE-specific routes for keep-alive."""
+            # Get file metadata
+            file_metadata = await self.gdrive_feature.get_file_metadata(file_id)
+            file_size = int(file_metadata.get('size', 0)) if file_metadata else 0
 
-        @self.mcp.custom_route('/ping', methods=['GET'])
+            # Download and parse
+            mindmup, file_content, error = await self._download_and_parse_mindmup(file_id)
+            if error:
+                return error
+
+            # Extract comprehensive summary
+            structured_data = MindmupParser.extract_mindmap_structure(mindmup)
+            test_case = structured_data.get('test_cases', [])
+
+            # Create focused summary
+            summary = {
+                "file_info": {
+                    "file_id": file_id,
+                    "file_name": file_metadata.get('name', 'Unknown'),
+                    "file_size_mb": round(file_size / (1024 * 1024), 2) if file_size else 0,
+                    "title": mindmup.title
+                },
+                "overview": structured_data.get('overview'),
+                "main_section": [],
+                "test_case_summary": [],
+                "total_node": mindmup.get_node_count()
+            }
+
+            # Extract main section
+            if 'hierarchy' in structured_data:
+                hierarchy = structured_data['hierarchy']
+                if 'children' in hierarchy:
+                    for section in hierarchy['children'][:5]:  # Top 5 main section
+                        summary['main_section'].append(section.get('title', ''))
+
+            # Format test case for summary
+            for i, case in enumerate(test_case[:10], 1):  # Top 10 test case
+                case_summary = {
+                    "index": i,
+                    "title": case.get('title', ''),
+                    "type": case.get('type', 'unknown')
+                }
+                if case.get('sub_items'):
+                    case_summary['detail'] = case['sub_items'][:3]  # First 3 sub-item
+                summary['test_case_summary'].append(case_summary)
+
+            return summary
+
+        except Exception as e:
+            error_message = f'analyze_mindmup_summary_tool error: {e}'
+            logger.error(error_message)
+            return {"error": error_message}
+
+    async def get_mindmup_chunk_tool(
+            self, file_id: str, chunk_index: int = 0, search_keyword: Optional[str] = None) -> Dict[str, Any]:
+        """Get specific chunk of a large mindmup file, with optional search.
+
+        Args:
+            file_id: File ID to download.
+            chunk_index: Which chunk to retrieve (0-based). Use -1 for search-only mode.
+            search_keyword: Optional keyword to search for in the mindmap.
+        """
+
+        try:
+            self._check_gdrive_initialized()
+        except ValueError as e:
+            return {"error": str(e)}
+
+        try:
+            # Download and parse
+            mindmup, file_content, error = await self._download_and_parse_mindmup(file_id=file_id)
+            if error:
+                return error
+
+            result = {
+                "file_id": file_id,
+                "mindmap_info": {
+                    "title": mindmup.title,
+                    "node_count": mindmup.get_node_count()
+                }
+            }
+
+            # If search keyword provided, perform search
+            if search_keyword:
+                search_result = MindmupParser.search_node(
+                    node=mindmup.root_node,
+                    keyword=search_keyword,
+                    max_result=30
+                )
+                result["search_result"] = {
+                    "keyword": search_keyword,
+                    "total_found": len(search_result),
+                    "result": search_result
+                }
+
+            # If chunk_index is -1, only return search results
+            if chunk_index == -1:
+                return result
+
+            # Extract text content for chunking
+            all_text_list = mindmup.extract_text_content()
+            all_text = ' '.join(all_text_list) if all_text_list else ''
+
+            # Split into chunk
+            chunk_list = MindmupParser.split_content_to_chunk(content=all_text)
+
+            if chunk_index >= len(chunk_list):
+                return {
+                    "error": f"Invalid chunk_index {chunk_index}. File has {len(chunk_list)} chunk total."
+                }
+
+            target_chunk = chunk_list[chunk_index]
+
+            result["chunk_info"] = {
+                "current_chunk": chunk_index,
+                "total_chunk": target_chunk["total_chunk"],
+                "content_length": len(target_chunk["content"]),
+                "start_position": target_chunk["start_pos"],
+                "end_position": target_chunk["end_pos"]
+            }
+            result["content"] = target_chunk["content"]
+            result["mindmap_info"]["total_length"] = len(all_text)
+
+            return result
+
+        except Exception as e:
+            error_message = f'get_mindmup_chunk_tool error: {e}'
+            logger.error(error_message)
+            return {"error": error_message}
+
+    async def get_multiple_mindmup_tool(
+            self, folder_id: Optional[str] = None, name_contain: Optional[str] = None,
+            max_result: int = 10) -> Dict[str, Any]:
+        """Get multiple mindmup content - Using search and parse.
+
+        Args:
+            folder_id: Specific folder to search in. If None, searches globally.
+            name_contain: Filter by file name containing this text.
+            max_result: Maximum number of files to process (default: 5).
+        """
+
+        try:
+            self._check_gdrive_initialized()
+        except ValueError as e:
+            return {"error": str(e)}
+
+        try:
+            # Searching all mindmup files using gdrive_feature
+            mindmup_file = await self.gdrive_feature.search_mindmup_file(
+                folder_id=folder_id,
+                name_contain=name_contain
+            )
+
+            result_data = []
+
+            # Limit the number of file to process
+            file_to_process = mindmup_file[:max_result]
+
+            logger.info(
+                f'Found {len(mindmup_file)} MindMup file, processing first {len(file_to_process)}')
+
+            # Loading and parsing mindmup one by one
+            for file_info in file_to_process:
+                try:
+                    # Check file size before processing
+                    if hasattr(file_info, 'size') and file_info.size:
+                        file_size = int(file_info.size)
+                        if not self.gdrive_feature.check_file_size(file_size, file_info.name):
+                            # Skip large files and add a summary entry
+                            result_data.append({
+                                "file_id": file_info.id,
+                                "file_name": file_info.name,
+                                "file_url": file_info.web_view_link,
+                                "last_modified": file_info.modified_time.isoformat() if file_info.modified_time else None,
+                                "error": f"File too large ({file_size} bytes), skipped",
+                                "file_size_bytes": file_size
+                            })
+                            continue
+
+                    # Download the file from GDrive
+                    download_result_frm_gdrive = await self.gdrive_feature.download_file_content(file_id=file_info.id)
+
+                    if download_result_frm_gdrive.is_success:
+                        file_content = download_result_frm_gdrive.detail.get(
+                            'content_str')
+                        if file_content:
+                            try:
+                                mindmap_data = await self._process_mindmup_content(file_info.id, file_content)
+                                if "error" not in mindmap_data:
+                                    # Add preview for multiple files
+                                    if "all_text_content" in mindmap_data:
+                                        mindmap_data["preview"] = MindmupParser.create_content_summary(
+                                            mindmap_data["all_text_content"], max_length=500
+                                        )
+                                    result_data.append({
+                                        "file_id": file_info.id,
+                                        "file_name": file_info.name,
+                                        "file_url": file_info.web_view_link,
+                                        "last_modified": file_info.modified_time.isoformat() if file_info.modified_time else None,
+                                        "mindmap": mindmap_data
+                                    })
+                                else:
+                                    logger.error(f'get_multiple_mindmup_tool: {mindmap_data["error"]}')
+                            except Exception as parse_error:
+                                logger.error(
+                                    f'get_multiple_mindmup_tool parse error: {file_info.id}, {parse_error}')
+
+                except Exception as file_error:
+                    logger.error(
+                        f'get_multiple_mindmup_tool file error: {file_info.id}, {file_error}')
+
+            logger.info(
+                f'get_multiple_mindmup_tool: processed {len(result_data)} files')
+            return {
+                "result": result_data,
+                "count": len(result_data)
+            }
+
+        except Exception as e:
+            error_message = f'get_multiple_mindmup_tool error: {e}'
+            logger.error(error_message)
+            return {"error": error_message}
+
+    def _setup_tool(self):
+        self.mcp.tool()(self.gdrive_tool_list_file)
+        self.mcp.tool()(self.get_single_mindmup_tool)
+        self.mcp.tool()(self.analyze_mindmup_summary_tool)
+        self.mcp.tool()(self.get_mindmup_chunk_tool)
+        self.mcp.tool()(self.get_multiple_mindmup_tool)
+
+    def _setup_sse_route(self):
+        @self.mcp.custom_route(path='/ping', methods=['GET'])
         async def ping_endpoint(request):
-            """HTTP ping endpoint for SSE keep-alive."""
-            from starlette.responses import JSONResponse
+            """HTTP ping endpoint for SSE make sure keep-alive."""
             return JSONResponse({
+                "result": "success",
                 "time": datetime.now().isoformat(),
-                "server": "MCP MindMup Google Drive"
+                "client_ip": request.client.host,
             })
 
-        @self.mcp.custom_route('/health', methods=['GET'])
-        async def health_endpoint(request):
-            """Health check endpoint."""
-            from starlette.responses import JSONResponse
+        @self.mcp.custom_route(path='/gdrive_client', methods=['GET'])
+        async def gdrive_client_health(request):
             return JSONResponse({
+                "result": "success",
                 "time": datetime.now().isoformat(),
-                "clients_initialized": self.gdrive_client is not None and self.mindmup_manager is not None
+                "initialize_gdrive_client": self.gdrive_client is not None
             })
 
-    async def initialize_clients(self):
-        """Initialize Google Drive and MindMup clients."""
+    async def initialize_gdrive_client(self):
+        """Initial Gdrive."""
         try:
             self.gdrive_client = GoogleDriveClient()
             auth_result = await self.gdrive_client.authenticate()
 
-            if not auth_result.success:
+            if not auth_result.is_success:
                 logger.error(
-                    f'Failed to authenticate with Google Drive: {auth_result.error}')
+                    f'Gdrive mcp_server initial failed: {auth_result.detail}')
                 return False
 
-            self.mindmup_manager = MindMupManager(self.gdrive_client)
-            logger.info('Clients initialized successfully')
+            self.gdrive_feature = GoogleDriveFeature(self.gdrive_client)
             return True
+
         except Exception as e:
-            logger.error(f'Error initializing clients: {e}')
+            logger.error(f'Gdrive mcp_server initial error: {e}')
             return False
 
-    def start(self, mode: str = 'stdio'):
-        """Start the MCP server."""
-        # Initialize clients
-        success = asyncio.run(self.initialize_clients())
-        if not success:
-            logger.error('Failed to initialize clients. Exiting.')
-            return
+    def start(self, transport: str = 'sse'):
+        """For starting MCP Sever. 'run.py' will call this function."""
 
-        logger.info('Clients ready. Starting FastMCP server')
-
-        # Start server
-        if mode == 'http':
-            logger.info('Starting FastMCP server in SSE mode')
-            self.mcp.run(transport='sse')
-        else:
-            logger.info('Starting FastMCP server in stdio mode')
-            self.mcp.run()
-
-
-# Create a singleton instance
-mcp_server = MCPServer()
+        # Run the server
+        self.mcp.run(transport=transport)  # Sever-Sent Event (For HTTP mode)
