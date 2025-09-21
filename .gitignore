@@ -1,5 +1,5 @@
-deployment/credentials
-credentials
+deployment/credential
+credential
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

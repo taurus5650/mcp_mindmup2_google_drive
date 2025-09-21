@@ -8,8 +8,8 @@ services:
       dockerfile: deployment/Dockerfile
     container_name: mcp_mindmup_container
     environment:
-      - GOOGLE_DRIVE_CREDENTIALS_FILE=${GOOGLE_DRIVE_CREDENTIALS_FILE}
-      - MCP_MODE=${MCP_MODE:-http}
+      - GOOGLE_DRIVE_CREDENTIAL_FILE=${GOOGLE_DRIVE_CREDENTIAL_FILE}
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-sse}
     ports:
       - '9802:9802'
     volumes:

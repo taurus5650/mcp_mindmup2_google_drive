@@ -25,24 +25,28 @@ A Model Context Protocol (MCP) server that provides seamless integration between
 ## 🏗️ Project Structure
 
 ```
-src/
 ├── deployment/
-│   ├── credentials/
+│   ├── credential/
 │   │   └── google_service_account.json # Google Cloud Service Account credentials
 │   ├── docker-compose-dev.yml
 │   ├── docker-compose-prod.yml
-│   ├── Dockerfile
-├── core/
-│   ├── mcp_server.py      # Main MCP server implementation
-│   ├── gdrive_client.py   # Google Drive API client
-│   ├── mindmup_manager.py # MindMup file management
-│   └── mindmup_parser.py  # MindMup file parsing
-├── models/
-│   ├── file_models.py     # File-related data models
-│   └── mindmap_models.py  # Mind map data models
-└── utils/
-    ├── enum.py           # Enumerations and constants
-    └── logger.py         # Logging utilities
+│   └── Dockerfile
+├── src/
+│   ├── core/
+│   │   ├── gdrive_client.py   # Google Drive API client
+│   │   ├── gdrive_feature.py  # Google Drive feature implementation
+│   │   ├── mcp_server.py      # Main MCP server implementation
+│   │   └── mindmup_parser.py  # MindMup file parsing
+│   ├── model/
+│   │   ├── common_model.py    # Common data models
+│   │   ├── gdrive_model.py    # Google Drive data models
+│   │   └── mindmup_model.py   # Mind map data models
+│   └── utility/
+│       ├── enum.py           # Enumerations and constants
+│       └── logger.py         # Logging utilities
+├── run.py                    # Main entry point
+├── requirements.txt          # Python dependencies
+└── makefile                 # Build and deployment commands
 ```
 
 ## 🚀 Getting Started
@@ -59,7 +63,7 @@ src/
    - Go to "IAM & Admin" → "Service Accounts"
    - Click "Create Service Account"
    - Download the JSON key file
-5. Place the JSON file at: `deployment/credentials/google_service_account.json`
+5. Place the JSON file at: `deployment/credential/google_service_account.json`
 
 ### Run the Server
 For development:
@@ -92,3 +96,10 @@ Add this server to your MCP client configuration:
 - **Sync Operations**: Two-way synchronization between local and cloud mind maps
 - **Advanced Tagging**: Add metadata and tags to mind map nodes
 - **Plugin System**: Extensible plugin architecture for custom functionality
+
+## Contribution
+
+This project is a collaborative effort:
+- 50% developed by the project maintainer
+- 50% generated with assistance from Claude AI
+
