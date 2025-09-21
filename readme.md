@@ -82,8 +82,8 @@ Add this server to your MCP client configuration:
 {
   "mcpServers": {
     "mindmup-gdrive": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:9802/sse"]
+      "command": "mcp-remote",
+      "args": ["http://localhost:9802/sse"]
     }
   }
 }
